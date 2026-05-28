@@ -31,9 +31,17 @@ function initials(name: string | null, username: string | null): string {
   return "?";
 }
 
+function formatPaise(paise: number): string {
+  return (paise / 100).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export default function FriendsPage() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(true);
+  const [balanceMap, setBalanceMap] = useState<Map<string, number>>(new Map());
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -46,14 +54,36 @@ export default function FriendsPage() {
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Load friends list
+  const fetchBalances = useCallback(async () => {
+    try {
+      const res = await fetch("/api/balances");
+      const data = await res.json();
+      const map = new Map<string, number>();
+      for (const b of data.balances ?? []) {
+        map.set(b.userId, b.net);
+      }
+      setBalanceMap(map);
+    } catch {
+      // leave unchanged
+    }
+  }, []);
+
+  // Load friends list + balances
   useEffect(() => {
     fetch("/api/friends")
       .then((r) => r.json())
       .then((d) => setFriends(d.friends ?? []))
       .catch(() => {})
       .finally(() => setFriendsLoading(false));
-  }, []);
+    fetchBalances();
+  }, [fetchBalances]);
+
+  // Refresh balances when an expense is added
+  useEffect(() => {
+    const handler = () => fetchBalances();
+    window.addEventListener("expense-added", handler);
+    return () => window.removeEventListener("expense-added", handler);
+  }, [fetchBalances]);
 
   // Auto-focus search input when opened
   useEffect(() => {
@@ -94,12 +124,10 @@ export default function FriendsPage() {
         return;
       }
       setAddStates((s) => ({ ...s, [user.id]: "done" }));
-      // Optimistically add to friends list
       setFriends((prev) => [
         ...prev,
         { id: data.friend.id, name: data.friend.name, username: data.friend.username, avatarUrl: data.friend.avatarUrl, since: new Date().toISOString() },
       ].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")));
-      // Remove from search results
       setSearchResults((prev) => prev.filter((u) => u.id !== user.id));
     } catch {
       setAddStates((s) => ({ ...s, [user.id]: "idle" }));
@@ -219,52 +247,69 @@ export default function FriendsPage() {
               {friends.length} {friends.length === 1 ? "Friend" : "Friends"}
             </p>
             <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
-              {friends.map((friend, i) => (
-                <div key={friend.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
-                  <Avatar className="h-10 w-10 shrink-0">
-                    <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[14px] font-medium">
-                      {initials(friend.name, friend.username)}
-                    </AvatarFallback>
-                  </Avatar>
+              {friends.map((friend, i) => {
+                const net = balanceMap.get(friend.id) ?? 0;
+                return (
+                  <div key={friend.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
+                    <Avatar className="h-10 w-10 shrink-0">
+                      <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[14px] font-medium">
+                        {initials(friend.name, friend.username)}
+                      </AvatarFallback>
+                    </Avatar>
 
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[15px] font-light truncate">{friend.name ?? friend.username}</p>
-                    {friend.username && (
-                      <p className="text-[13px] text-muted-foreground font-light">@{friend.username}</p>
-                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[15px] font-light truncate">{friend.name ?? friend.username}</p>
+                      {friend.username && (
+                        <p className="text-[13px] text-muted-foreground font-light">@{friend.username}</p>
+                      )}
+                    </div>
+
+                    {/* Balance */}
+                    <div className="text-right shrink-0">
+                      {net === 0 ? (
+                        <span className="text-[13px] font-light text-muted-foreground">Settled</span>
+                      ) : net > 0 ? (
+                        <div>
+                          <p className="text-[13px] font-light text-emerald-600 tabular-nums">+₹{formatPaise(net)}</p>
+                          <p className="text-[11px] font-light text-muted-foreground">owes you</p>
+                        </div>
+                      ) : (
+                        <div>
+                          <p className="text-[13px] font-light text-rose-500 tabular-nums">-₹{formatPaise(Math.abs(net))}</p>
+                          <p className="text-[11px] font-light text-muted-foreground">you owe</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Remove menu */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setOpenMenuId(openMenuId === friend.id ? null : friend.id)}
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-black/[0.04] transition-colors duration-150 text-[16px] leading-none"
+                        aria-label="More options"
+                      >
+                        ···
+                      </button>
+
+                      {openMenuId === friend.id && (
+                        <div className="absolute right-0 top-8 z-10 min-w-[140px] rounded-xl border border-black/[0.06] bg-white shadow-[0_4px_16px_rgba(0,0,0,0.10)] overflow-hidden">
+                          <button
+                            onClick={() => handleRemove(friend.id)}
+                            disabled={removingId === friend.id}
+                            className="flex w-full items-center gap-2 px-4 py-2.5 text-[13px] font-light text-rose-500 hover:bg-rose-50 transition-colors duration-150 disabled:opacity-50"
+                          >
+                            {removingId === friend.id
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <UserX className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            }
+                            Remove friend
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-
-                  {/* Balance placeholder */}
-                  <span className="text-[15px] font-thin text-muted-foreground tabular-nums">₹0</span>
-
-                  {/* Remove menu */}
-                  <div className="relative">
-                    <button
-                      onClick={() => setOpenMenuId(openMenuId === friend.id ? null : friend.id)}
-                      className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-black/[0.04] transition-colors duration-150 text-[16px] leading-none"
-                      aria-label="More options"
-                    >
-                      ···
-                    </button>
-
-                    {openMenuId === friend.id && (
-                      <div className="absolute right-0 top-8 z-10 min-w-[140px] rounded-xl border border-black/[0.06] bg-white shadow-[0_4px_16px_rgba(0,0,0,0.10)] overflow-hidden">
-                        <button
-                          onClick={() => handleRemove(friend.id)}
-                          disabled={removingId === friend.id}
-                          className="flex w-full items-center gap-2 px-4 py-2.5 text-[13px] font-light text-rose-500 hover:bg-rose-50 transition-colors duration-150 disabled:opacity-50"
-                        >
-                          {removingId === friend.id
-                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            : <UserX className="h-3.5 w-3.5" strokeWidth={1.5} />
-                          }
-                          Remove friend
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

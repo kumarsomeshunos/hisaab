@@ -220,8 +220,45 @@ Schema implemented in `src/lib/db/schema.ts` (Drizzle ORM / Neon PostgreSQL).
 
 **Model:** Symmetric, no-request. Adding A→B inserts both `(A,B)` and `(B,A)` atomically. Removal deletes both rows. Query A's friends: `WHERE user_id = A`.
 
+### `guest_contacts`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `owner_id` | uuid FK → users.id CASCADE | The app user who added this contact |
+| `name` | text NOT NULL | Display name (1–60 chars) |
+| `phone` | text nullable | From device Contact Picker |
+| `created_at` | timestamptz | — |
+
+Guests are reusable across expenses. Deleting the owner cascades to all their guest contacts.
+
+### `expenses` (updated)
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `description` | text NOT NULL | Max 200 chars |
+| `amount` | integer NOT NULL | Total in paise (₹1 = 100 paise) |
+| `paid_by_id` | uuid FK → users.id RESTRICT | Who paid the full bill |
+| `created_by_id` | uuid FK → users.id RESTRICT | Who created the record |
+| `date` | timestamptz NOT NULL | Date of the expense |
+| `created_at` | timestamptz | — |
+| `updated_at` | timestamptz | — |
+
+### `expense_splits`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `expense_id` | uuid FK → expenses.id CASCADE | Split deleted when expense deleted |
+| `user_id` | uuid FK → users.id RESTRICT | Person who has this share |
+| `amount` | integer NOT NULL | Their share in paise |
+| `created_at` | timestamptz | — |
+
+**Business rules:**
+- Payer is always a split participant (their row = their own share).
+- Sum of all split amounts = expense.amount. Enforced at API layer.
+- Equal split: `floor(total/n)` per person; remainder paise go to the first participants.
+- Only the creator can delete an expense.
+
 ```
-Group: id, name, createdBy → User, members → User[], createdAt
 Expense: id, groupId → Group | null, description, amount (paise), paidBy → User, splits → Split[], date, createdAt
 Split: id, expenseId → Expense, userId → User, type: equal|exact|percentage|shares, value, settledAt
 Settlement: id, fromUser → User, toUser → User, amount (paise), groupId → Group | null, date, createdAt
@@ -251,12 +288,11 @@ Activity: id, type, actorId → User, targetId, payload JSON, createdAt
 | `/api/groups/[id]` | GET | Group detail | Session |
 | `/api/groups/[id]` | PATCH | Edit group | Session |
 | `/api/groups/[id]/expenses` | GET | List group expenses | Session |
-| `/api/expenses` | POST | Add expense | Session |
-| `/api/expenses/[id]` | GET | Expense detail | Session |
-| `/api/expenses/[id]` | PATCH | Edit expense | Session |
-| `/api/expenses/[id]` | DELETE | Delete expense | Session |
-| `/api/settlements` | POST | Record settlement | Session |
-| `/api/balances` | GET | Net balances for current user | Session |
+| `/api/guest-contacts` | GET | List the current user's saved guest contacts | Session |
+| `/api/guest-contacts` | POST | Create a new guest contact (name + optional phone) | Session |
+| `/api/expenses` | POST | Create expense with splits (equal or exact) | Session |
+| `/api/expenses/[id]` | DELETE | Delete expense + splits (creator only, cascade) | Session |
+| `/api/balances` | GET | Net paise balance per friend (positive = they owe you) | Session |
 | `/api/activity` | GET | Activity feed | Session |
 
 ---
@@ -405,7 +441,10 @@ _Not yet configured._
 - [ ] `shadcn` package listed as a runtime dependency in `package.json` — should be devDependency
 - [ ] `/api/auth/username-check` has no rate limiting — add IP-based rate limiting before public launch
 - [ ] `/api/users/search` has no rate limiting — add IP-based limit before public launch
-- [ ] Friend card balance is hardcoded ₹0 — wire to real settlement data when expenses feature is built
+- [ ] Edit expense (PATCH /api/expenses/[id]) — deferred
+- [ ] Settlement recording (mark a debt as paid) — deferred
+- [ ] Group-context expenses (nullable `group_id` column) — deferred
+- [ ] Full `/expenses` list page (pagination, filters) — deferred
 - [ ] No friend detail page (`/friends/[username]`) — deferred
 
 ---
@@ -437,3 +476,4 @@ _Not yet configured._
 | 2026-05-28 | Implemented email OTP authentication — Drizzle schema (users/otp_codes/sessions), 6 API routes, /auth and /auth/setup pages, Edge middleware, .env.example, DB scripts |
 | 2026-05-28 | Implemented friends feature — friendships table (symmetric, composite PK), 3 API routes (list/add/remove + user search), /friends page with inline search and remove |
 | 2026-05-28 | Implemented account/profile page — PATCH /api/account, /account page with edit mode (name + username), read-only email, sign out |
+| 2026-05-28 | Full-screen mobile expense form + guest participants — guest_contacts table, Contact Picker API integration, guest payer support, Non-app debts dashboard section | — expenses + expense_splits tables, POST/GET /api/expenses, DELETE /api/expenses/[id], GET /api/balances, AddExpenseSheet bottom-sheet form (equal + exact splits), global FAB in AppShell, dashboard balance tiles + activity list wired to real data, friends page balances wired |
