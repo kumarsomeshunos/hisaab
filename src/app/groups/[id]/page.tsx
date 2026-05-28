@@ -214,32 +214,65 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
         <section>
           <p className="text-[13px] font-medium text-muted-foreground tracking-[0.02em] uppercase mb-2 px-1">Balances</p>
           <div className="rounded-2xl bg-card border border-black/[0.06] overflow-hidden">
-            {members.filter((m) => !(m.type === "user" && m.id === currentUser?.id)).map((m, i) => (
+            {members.filter((m) => !(m.type === "user" && m.id === currentUser?.id)).map((m, i) => {
+              const canLink = m.type === "user" && m.username;
+              return (
               <div key={m.memberId} className={cn("flex items-center gap-3 px-4 py-3.5", i > 0 && "border-t border-black/[0.06]")}>
-                <Avatar className="h-9 w-9 shrink-0">
-                  <AvatarFallback className={cn("text-[13px] font-medium", m.type === "user" ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-200 text-zinc-600")}>
-                    {(m.name ?? "?").charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-light truncate">{m.name ?? m.username ?? "Guest"}</p>
-                  {m.type === "guest" && <span className="text-[10px] text-zinc-400">Guest</span>}
-                </div>
-                <div className="text-right shrink-0">
-                  {m.net === 0 ? (
-                    <p className="text-[13px] font-light text-muted-foreground">Settled</p>
-                  ) : m.net > 0 ? (
-                    <>
-                      <p className="text-[14px] font-light text-emerald-600 tabular-nums">+₹{formatPaise(m.net)}</p>
-                      <p className="text-[11px] font-light text-muted-foreground">owes you</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-[14px] font-light text-rose-500 tabular-nums">-₹{formatPaise(Math.abs(m.net))}</p>
-                      <p className="text-[11px] font-light text-muted-foreground">you owe</p>
-                    </>
-                  )}
-                </div>
+                {canLink ? (
+                  <Link href={`/friends/${m.username}`} className="flex flex-1 items-center gap-3 min-w-0">
+                    <Avatar className="h-9 w-9 shrink-0">
+                      <AvatarFallback className={cn("text-[13px] font-medium", m.type === "user" ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-200 text-zinc-600")}>
+                        {(m.name ?? "?").charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-light truncate">{m.name ?? m.username ?? "Guest"}</p>
+                      {m.type === "guest" && <span className="text-[10px] text-zinc-400">Guest</span>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      {m.net === 0 ? (
+                        <p className="text-[13px] font-light text-muted-foreground">Settled</p>
+                      ) : m.net > 0 ? (
+                        <>
+                          <p className="text-[14px] font-light text-emerald-600 tabular-nums">+₹{formatPaise(m.net)}</p>
+                          <p className="text-[11px] font-light text-muted-foreground">owes you</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[14px] font-light text-rose-500 tabular-nums">-₹{formatPaise(Math.abs(m.net))}</p>
+                          <p className="text-[11px] font-light text-muted-foreground">you owe</p>
+                        </>
+                      )}
+                    </div>
+                  </Link>
+                ) : (
+                  <>
+                    <Avatar className="h-9 w-9 shrink-0">
+                      <AvatarFallback className={cn("text-[13px] font-medium", m.type === "user" ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-200 text-zinc-600")}>
+                        {(m.name ?? "?").charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-light truncate">{m.name ?? m.username ?? "Guest"}</p>
+                      {m.type === "guest" && <span className="text-[10px] text-zinc-400">Guest</span>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      {m.net === 0 ? (
+                        <p className="text-[13px] font-light text-muted-foreground">Settled</p>
+                      ) : m.net > 0 ? (
+                        <>
+                          <p className="text-[14px] font-light text-emerald-600 tabular-nums">+₹{formatPaise(m.net)}</p>
+                          <p className="text-[11px] font-light text-muted-foreground">owes you</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[14px] font-light text-rose-500 tabular-nums">-₹{formatPaise(Math.abs(m.net))}</p>
+                          <p className="text-[11px] font-light text-muted-foreground">you owe</p>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
                 {m.net !== 0 && (
                   <button
                     onClick={() => { setSettleOpen(m); setSettleAmount(formatPaise(Math.abs(m.net)).replace(/,/g, "")); }}
@@ -249,7 +282,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                   </button>
                 )}
               </div>
-            ))}
+              );
+            })}
             {members.filter((m) => !(m.type === "user" && m.id === currentUser?.id)).length === 0 && (
               <div className="flex flex-col items-center justify-center py-10 text-center">
                 <p className="text-[14px] font-light text-muted-foreground">Add members to start splitting.</p>
@@ -286,19 +320,21 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                 : `${e.paidBy.name ?? e.paidBy.username ?? "Someone"} paid`;
               return (
                 <div key={e.id} className={cn("flex items-center gap-3 px-4 py-3.5", i > 0 && "border-t border-black/[0.06]")}>
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <Receipt className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-light truncate">{e.title}</p>
-                    <p className="text-[12px] text-muted-foreground font-light">
-                      {payerLabel} · {new Date(e.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-[14px] font-light tabular-nums">₹{formatPaise(e.amount)}</p>
-                    <p className="text-[11px] font-light text-muted-foreground tabular-nums">your share ₹{formatPaise(e.myShare)}</p>
-                  </div>
+                  <Link href={`/expenses/${e.id}`} className="flex flex-1 items-center gap-3 min-w-0 hover:opacity-80 transition-opacity duration-150">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
+                      <Receipt className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-light truncate">{e.title}</p>
+                      <p className="text-[12px] text-muted-foreground font-light">
+                        {payerLabel} · {new Date(e.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-[14px] font-light tabular-nums">₹{formatPaise(e.amount)}</p>
+                      <p className="text-[11px] font-light text-muted-foreground tabular-nums">your share ₹{formatPaise(e.myShare)}</p>
+                    </div>
+                  </Link>
                   {isMyExpense && (
                     <button
                       onClick={() => handleDeleteExpense(e.id)}
@@ -327,30 +363,47 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
             </button>
           </div>
           <div className="rounded-2xl bg-card border border-black/[0.06] overflow-hidden">
-            {members.map((m, i) => (
-              <div key={m.memberId} className={cn("flex items-center gap-3 px-4 py-3.5", i > 0 && "border-t border-black/[0.06]")}>
-                <Avatar className="h-9 w-9 shrink-0">
-                  <AvatarFallback className={cn("text-[13px] font-medium", m.type === "user" ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-200 text-zinc-600")}>
-                    {(m.name ?? "?").charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-light truncate">{m.name ?? m.username ?? "Guest"}</p>
-                  {m.username && <p className="text-[12px] text-muted-foreground">@{m.username}</p>}
-                  {m.type === "guest" && m.phone && <p className="text-[12px] text-muted-foreground">{m.phone}</p>}
+            {members.map((m, i) => {
+              const isMe = m.type === "user" && m.id === currentUser?.id;
+              const canLink = m.type === "user" && m.username && !isMe;
+              const rowContent = (
+                <>
+                  <Avatar className="h-9 w-9 shrink-0">
+                    <AvatarFallback className={cn("text-[13px] font-medium", m.type === "user" ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-200 text-zinc-600")}>
+                      {(m.name ?? "?").charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-light truncate">{m.name ?? m.username ?? "Guest"}{isMe && " (you)"}</p>
+                    {m.username && <p className="text-[12px] text-muted-foreground">@{m.username}</p>}
+                    {m.type === "guest" && m.phone && <p className="text-[12px] text-muted-foreground">{m.phone}</p>}
+                  </div>
+                  {m.type === "guest" && <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded-md shrink-0">Guest</span>}
+                </>
+              );
+              return (
+                <div key={m.memberId} className={cn("flex items-center gap-3 px-4 py-3.5", i > 0 && "border-t border-black/[0.06]")}>
+                  {canLink ? (
+                    <Link href={`/friends/${m.username}`} className="flex flex-1 items-center gap-3 min-w-0 hover:opacity-80 transition-opacity duration-150">
+                      {rowContent}
+                    </Link>
+                  ) : (
+                    <div className="flex flex-1 items-center gap-3 min-w-0">
+                      {rowContent}
+                    </div>
+                  )}
+                  {group.createdById === currentUser?.id && !isMe && (
+                    <button
+                      onClick={() => removeMember(m.memberId)}
+                      className="ml-1 flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-black/[0.06] transition-colors duration-150"
+                      aria-label="Remove member"
+                    >
+                      <X className="h-3.5 w-3.5" strokeWidth={2} />
+                    </button>
+                  )}
                 </div>
-                {m.type === "guest" && <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded-md shrink-0">Guest</span>}
-                {group.createdById === currentUser?.id && !(m.type === "user" && m.id === currentUser?.id) && (
-                  <button
-                    onClick={() => removeMember(m.memberId)}
-                    className="ml-1 flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-black/[0.06] transition-colors duration-150"
-                    aria-label="Remove member"
-                  >
-                    <X className="h-3.5 w-3.5" strokeWidth={2} />
-                  </button>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 

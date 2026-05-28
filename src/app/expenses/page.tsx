@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { Input } from "@/components/ui/input";
-import { Search, Loader2, Receipt, X } from "lucide-react";
+import { Search, Loader2, Receipt, X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
 
@@ -18,6 +17,7 @@ type Expense = {
   groupId: string | null;
   groupName: string | null;
   myShare: number;
+  settled: boolean;
   paidBy: { type: "user" | "guest"; id: string; name: string | null; username?: string | null };
 };
 
@@ -34,12 +34,12 @@ function categoryIcon(key: string | null): string {
 }
 
 export default function ExpensesPage() {
-  const router = useRouter();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [showSettled, setShowSettled] = useState(false);
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -113,6 +113,8 @@ export default function ExpensesPage() {
   ];
 
   const hasFilters = debouncedQuery || selectedCategory || selectedGroupId;
+  const activeExpenses = expenses.filter((e) => !e.settled);
+  const settledExpenses = expenses.filter((e) => e.settled);
 
   return (
     <AppShell>
@@ -197,39 +199,106 @@ export default function ExpensesPage() {
             </p>
           </div>
         ) : (
-          <div className="rounded-2xl bg-card border border-black/[0.06] overflow-hidden">
-            {expenses.map((expense, i) => {
-              const isMyExpense = expense.paidBy.type === "user" && expense.paidBy.id === currentUserId;
-              const payerLabel = isMyExpense
-                ? "You paid"
-                : `${expense.paidBy.name ?? expense.paidBy.username ?? "Someone"} paid`;
-              return (
-                <Link
-                  key={expense.id}
-                  href={`/expenses/${expense.id}`}
-                  className={cn("flex items-center gap-3 px-4 py-3.5 hover:bg-black/[0.02] transition-colors duration-150", i > 0 && "border-t border-black/[0.06]")}
+          <div className="space-y-4">
+            {/* Active expenses */}
+            {activeExpenses.length > 0 && (
+              <div className="rounded-2xl bg-card border border-black/[0.06] overflow-hidden">
+                {activeExpenses.map((expense, i) => {
+                  const isMyExpense = expense.paidBy.type === "user" && expense.paidBy.id === currentUserId;
+                  const payerLabel = isMyExpense
+                    ? "You paid"
+                    : `${expense.paidBy.name ?? expense.paidBy.username ?? "Someone"} paid`;
+                  return (
+                    <Link
+                      key={expense.id}
+                      href={`/expenses/${expense.id}`}
+                      className={cn("flex items-center gap-3 px-4 py-3.5 hover:bg-black/[0.02] transition-colors duration-150", i > 0 && "border-t border-black/[0.06]")}
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-[18px]">
+                        {expense.category ? categoryIcon(expense.category) : <Receipt className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-light truncate">{expense.title}</p>
+                        <p className="text-[12px] font-light text-muted-foreground">
+                          {payerLabel}
+                          {" · "}
+                          {new Date(expense.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                          {expense.groupName && <> · {expense.groupName}</>}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[14px] font-light tabular-nums">₹{formatPaise(expense.amount)}</p>
+                        <p className={cn("text-[11px] font-light tabular-nums", isMyExpense ? "text-emerald-600" : "text-rose-500")}>your share ₹{formatPaise(expense.myShare)}</p>
+                      </div>
+                    </Link>
+                  );
+                })}
+                {nextCursor && (
+                  <div className="border-t border-black/[0.06]">
+                    <button
+                      onClick={loadMore}
+                      disabled={loadingMore}
+                      className="w-full py-3.5 text-[13px] font-light text-muted-foreground hover:text-foreground hover:bg-black/[0.02] transition-colors duration-150 flex items-center justify-center gap-2"
+                    >
+                      {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Load more"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Settled expenses (collapsible) */}
+            {settledExpenses.length > 0 && (
+              <section>
+                <button
+                  onClick={() => setShowSettled((s) => !s)}
+                  className="flex items-center gap-2 w-full text-left px-1 pb-2"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-[18px]">
-                    {expense.category ? categoryIcon(expense.category) : <Receipt className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />}
+                  <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground flex-1">
+                    Settled ({settledExpenses.length})
+                  </p>
+                  <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform duration-150", showSettled && "rotate-180")} />
+                </button>
+                {showSettled && (
+                  <div className="rounded-2xl bg-card border border-black/[0.06] overflow-hidden">
+                    {settledExpenses.map((expense, i) => {
+                      const isMyExpense = expense.paidBy.type === "user" && expense.paidBy.id === currentUserId;
+                      const payerLabel = isMyExpense
+                        ? "You paid"
+                        : `${expense.paidBy.name ?? expense.paidBy.username ?? "Someone"} paid`;
+                      return (
+                        <Link
+                          key={expense.id}
+                          href={`/expenses/${expense.id}`}
+                          className={cn("flex items-center gap-3 px-4 py-3.5 hover:bg-black/[0.02] transition-colors duration-150", i > 0 && "border-t border-black/[0.06]")}
+                        >
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-[18px]">
+                            {expense.category ? categoryIcon(expense.category) : <Receipt className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[14px] font-light text-muted-foreground truncate">{expense.title}</p>
+                            <p className="text-[12px] font-light text-muted-foreground">
+                              {payerLabel}
+                              {" · "}
+                              {new Date(expense.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                              {expense.groupName && <> · {expense.groupName}</>}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-[14px] font-light tabular-nums text-muted-foreground">₹{formatPaise(expense.amount)}</p>
+                            <p className="text-[11px] font-light tabular-nums text-muted-foreground">your share ₹{formatPaise(expense.myShare)}</p>
+                          </div>
+                        </Link>
+                      );
+                    })}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-light truncate">{expense.title}</p>
-                    <p className="text-[12px] font-light text-muted-foreground">
-                      {payerLabel}
-                      {" · "}
-                      {new Date(expense.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                      {expense.groupName && <> · {expense.groupName}</>}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-[14px] font-light tabular-nums">₹{formatPaise(expense.amount)}</p>
-                    <p className={cn("text-[11px] font-light tabular-nums", isMyExpense ? "text-emerald-600" : "text-rose-500")}>your share ₹{formatPaise(expense.myShare)}</p>
-                  </div>
-                </Link>
-              );
-            })}
-            {nextCursor && (
-              <div className="border-t border-black/[0.06]">
+                )}
+              </section>
+            )}
+
+            {/* Load more when only settled expenses remain */}
+            {activeExpenses.length === 0 && nextCursor && (
+              <div className="rounded-2xl bg-card border border-black/[0.06] overflow-hidden">
                 <button
                   onClick={loadMore}
                   disabled={loadingMore}

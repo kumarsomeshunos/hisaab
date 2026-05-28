@@ -19,6 +19,7 @@ const schema = z.object({
     .max(50)
     .refine((v) => v === "" || v.includes("@"), { message: "UPI ID must contain @." })
     .optional(),
+  avatar: z.string().max(4).nullable().optional(),
 });
 
 export async function PATCH(request: NextRequest) {
@@ -39,7 +40,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { name, username, upiId } = parsed.data;
+    const { name, username, upiId, avatar } = parsed.data;
 
     // Username uniqueness — exclude current user so they can keep their own
     const taken = await db
@@ -53,13 +54,20 @@ export async function PATCH(request: NextRequest) {
     }
 
     const resolvedUpiId = upiId === "" ? null : (upiId ?? undefined);
+    const resolvedAvatar = avatar === undefined ? undefined : (avatar ?? null);
 
     await db
       .update(users)
-      .set({ name, username, ...(resolvedUpiId !== undefined ? { upiId: resolvedUpiId } : {}), updatedAt: new Date() })
+      .set({
+        name,
+        username,
+        ...(resolvedUpiId !== undefined ? { upiId: resolvedUpiId } : {}),
+        ...(resolvedAvatar !== undefined ? { avatarUrl: resolvedAvatar } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(users.id, user.id));
 
-    return NextResponse.json({ success: true, user: { name, username, upiId: resolvedUpiId ?? null } });
+    return NextResponse.json({ success: true, user: { name, username, upiId: resolvedUpiId ?? null, avatar: resolvedAvatar ?? null } });
   } catch (err) {
     console.error("[account/PATCH] Unexpected error:", err);
     return NextResponse.json({ error: "Something went wrong." }, { status: 500 });

@@ -18,7 +18,7 @@ export async function GET(
     const { username } = await params;
 
     const [target] = await db
-      .select({ id: users.id, name: users.name, username: users.username, upiId: users.upiId })
+      .select({ id: users.id, name: users.name, username: users.username, upiId: users.upiId, avatarUrl: users.avatarUrl })
       .from(users)
       .where(eq(users.username, username))
       .limit(1);
@@ -234,7 +234,7 @@ export async function GET(
     }
 
     return NextResponse.json({
-      user: { id: target.id, name: target.name, username: target.username, upiId: target.upiId },
+      user: { id: target.id, name: target.name, username: target.username, upiId: target.upiId, avatar: target.avatarUrl },
       balance,
       mutualGroups,
       expenses: sharedExpenses,

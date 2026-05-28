@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { friendships, settlements } from "@/lib/db/schema";
+import { users, friendships, settlements } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { writeActivity } from "@/lib/activity";
 
@@ -55,11 +55,26 @@ export async function POST(request: NextRequest) {
       recordedById: user.id,
     });
 
+    const [friendInfo] = await db
+      .select({ name: users.name, username: users.username })
+      .from(users)
+      .where(eq(users.id, friendUserId))
+      .limit(1);
+
+    const myName = user.name ?? user.username ?? "Someone";
+    const friendName = friendInfo?.name ?? friendInfo?.username ?? "Someone";
+
     await writeActivity({
       type: "settlement_recorded",
       actorId: user.id,
       groupId: null,
-      payload: { amount: paise, note: note ?? null },
+      payload: {
+        amount: paise,
+        note: note ?? null,
+        fromName: direction === "i_paid" ? myName : friendName,
+        toName: direction === "i_paid" ? friendName : myName,
+        friendUsername: friendInfo?.username ?? null,
+      },
       visibleToUserIds: [user.id, friendUserId],
     });
 

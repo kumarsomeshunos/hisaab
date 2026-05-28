@@ -20,6 +20,8 @@ type UserProfile = {
   upiId: string | null;
 };
 
+const EMOJI_OPTIONS = ["😊","😎","🤑","🙈","🦊","🐼","🐸","🦄","🌸","⭐","🍕","🍦","🎉","✈️","🏖️","⚽","🎵","📚","💼","🏠","🌈","❤️","🔥","💎","🎯"];
+
 function initials(name: string | null, username: string | null): string {
   if (name) return name.trim().charAt(0).toUpperCase();
   if (username) return username.trim().charAt(0).toUpperCase();
@@ -36,6 +38,7 @@ export default function AccountPage() {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [upiId, setUpiId] = useState("");
+  const [avatar, setAvatar] = useState<string | null>(null);
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +69,7 @@ export default function AccountPage() {
     setName(user.name ?? "");
     setUsername(user.username ?? "");
     setUpiId(user.upiId ?? "");
+    setAvatar(user.avatarUrl);
     setUsernameStatus("unchanged");
     setError(null);
     setEditing(true);
@@ -109,7 +113,7 @@ export default function AccountPage() {
       const res = await fetch("/api/account", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), username: username.toLowerCase(), upiId: upiId.trim() }),
+        body: JSON.stringify({ name: name.trim(), username: username.toLowerCase(), upiId: upiId.trim(), avatar }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -117,12 +121,12 @@ export default function AccountPage() {
         if (data.error?.toLowerCase().includes("taken")) setUsernameStatus("taken");
         return;
       }
-      setUser((u) => u ? { ...u, name: data.user.name, username: data.user.username, upiId: data.user.upiId ?? null } : u);
+      setUser((u) => u ? { ...u, name: data.user.name, username: data.user.username, upiId: data.user.upiId ?? null, avatarUrl: data.user.avatar ?? null } : u);
       setEditing(false);
     } finally {
       setSaving(false);
     }
-  }, [user, name, username, upiId]);
+  }, [user, name, username, upiId, avatar]);
 
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
@@ -243,15 +247,33 @@ export default function AccountPage() {
             <div className="flex flex-col items-center gap-3 pt-2">
               <Avatar className="h-20 w-20">
                 <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[32px] font-light">
-                  {initials(user.name, user.username)}
+                  {editing ? (avatar ?? initials(user.name, user.username)) : (user.avatarUrl ?? initials(user.name, user.username))}
                 </AvatarFallback>
               </Avatar>
-              <div className="text-center">
-                <p className="text-[20px] font-light tracking-[-0.02em]">{user.name ?? "—"}</p>
-                {user.username && (
-                  <p className="text-[14px] text-muted-foreground font-light">@{user.username}</p>
-                )}
-              </div>
+              {editing ? (
+                <div className="flex flex-wrap gap-2 justify-center max-w-xs">
+                  {EMOJI_OPTIONS.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => setAvatar(avatar === e ? null : e)}
+                      className={cn(
+                        "h-10 w-10 text-[22px] rounded-full flex items-center justify-center transition-colors duration-150",
+                        avatar === e ? "bg-emerald-500/20 ring-2 ring-emerald-500/40" : "hover:bg-black/[0.05]"
+                      )}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center">
+                  <p className="text-[20px] font-light tracking-[-0.02em]">{user.name ?? "—"}</p>
+                  {user.username && (
+                    <p className="text-[14px] text-muted-foreground font-light">@{user.username}</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Profile fields */}

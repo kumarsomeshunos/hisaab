@@ -516,7 +516,7 @@ export async function PATCH(
       type: "expense_edited",
       actorId: user.id,
       groupId: expense.groupId ?? null,
-      payload: { expenseId: id, title, amount: totalPaise },
+      payload: { expenseId: id, title, amount: totalPaise, actorName: user.name ?? user.username ?? null },
       visibleToUserIds: participantUserIds,
     });
 
@@ -568,7 +568,7 @@ export async function DELETE(
       type: "expense_deleted",
       actorId: user.id,
       groupId: expense.groupId ?? null,
-      payload: { expenseId: expense.id, title: expense.title, amount: expense.amount },
+      payload: { expenseId: expense.id, title: expense.title, amount: expense.amount, actorName: user.name ?? user.username ?? null },
       visibleToUserIds: visibleTo,
     });
 

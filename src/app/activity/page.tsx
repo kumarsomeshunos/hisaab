@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { Receipt, UserPlus, UserMinus, Users, Loader2, Handshake } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -73,8 +74,8 @@ function describeEvent(event: ActivityEvent, currentUserId: string): string {
       return `${actor} removed you`;
     }
     case "settlement_recorded": {
-      const from = p.fromName as string;
-      const to = p.toName as string;
+      const from = (p.fromName as string | undefined) ?? (isActor ? "You" : actor);
+      const to = (p.toName as string | undefined) ?? "someone";
       const amount = p.amount as number;
       const groupName = p.groupName as string | undefined;
       return `${from} paid ${to} ₹${formatPaise(amount)}${groupName ? ` (${groupName})` : ""}`;
@@ -90,6 +91,28 @@ function describeEvent(event: ActivityEvent, currentUserId: string): string {
     }
     default:
       return event.type.replace(/_/g, " ");
+  }
+}
+
+function eventHref(event: ActivityEvent): string | null {
+  const p = event.payload as Record<string, string | undefined>;
+  switch (event.type) {
+    case "expense_added":
+    case "expense_edited":
+    case "expense_deleted":
+      return p.expenseId ? `/expenses/${p.expenseId}` : null;
+    case "friend_added":
+    case "friend_removed":
+      return p.friendUsername ? `/friends/${p.friendUsername}` : null;
+    case "settlement_recorded":
+      if (p.groupId) return `/groups/${p.groupId}`;
+      if (p.friendUsername) return `/friends/${p.friendUsername}`;
+      return null;
+    case "group_created":
+    case "group_member_added":
+      return p.groupId ? `/groups/${p.groupId}` : null;
+    default:
+      return null;
   }
 }
 
@@ -167,21 +190,30 @@ export default function ActivityPage() {
           </div>
         ) : (
           <div className="rounded-2xl bg-card border border-black/[0.06] overflow-hidden">
-            {events.map((event, i) => (
-              <div key={event.id} className={cn("flex items-start gap-3 px-4 py-3.5", i > 0 && "border-t border-black/[0.06]")}>
-                <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-0.5", eventBgColor(event.type))}>
-                  <span className={eventIconColor(event.type)}>
-                    <EventIcon type={event.type} />
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-light leading-snug">
-                    {currentUserId ? describeEvent(event, currentUserId) : "…"}
-                  </p>
-                  <p className="text-[12px] font-light text-muted-foreground mt-0.5">{relativeTime(event.createdAt)}</p>
-                </div>
-              </div>
-            ))}
+            {events.map((event, i) => {
+              const href = eventHref(event);
+              const rowClass = cn("flex items-start gap-3 px-4 py-3.5", href && "hover:bg-black/[0.02] transition-colors duration-150", i > 0 && "border-t border-black/[0.06]");
+              const content = (
+                <>
+                  <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-0.5", eventBgColor(event.type))}>
+                    <span className={eventIconColor(event.type)}>
+                      <EventIcon type={event.type} />
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-light leading-snug">
+                      {currentUserId ? describeEvent(event, currentUserId) : "…"}
+                    </p>
+                    <p className="text-[12px] font-light text-muted-foreground mt-0.5">{relativeTime(event.createdAt)}</p>
+                  </div>
+                </>
+              );
+              return href ? (
+                <Link key={event.id} href={href} className={rowClass}>{content}</Link>
+              ) : (
+                <div key={event.id} className={rowClass}>{content}</div>
+              );
+            })}
             {nextCursor && (
               <div className="border-t border-black/[0.06]">
                 <button

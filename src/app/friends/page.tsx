@@ -79,11 +79,15 @@ export default function FriendsPage() {
     fetchBalances();
   }, [fetchBalances]);
 
-  // Refresh balances when an expense is added
+  // Refresh balances when an expense is added or settlement recorded
   useEffect(() => {
     const handler = () => fetchBalances();
     window.addEventListener("expense-added", handler);
-    return () => window.removeEventListener("expense-added", handler);
+    window.addEventListener("settlement-recorded", handler);
+    return () => {
+      window.removeEventListener("expense-added", handler);
+      window.removeEventListener("settlement-recorded", handler);
+    };
   }, [fetchBalances]);
 
   // Auto-focus search input when opened
@@ -259,7 +263,7 @@ export default function FriendsPage() {
                       >
                         <Avatar className="h-10 w-10 shrink-0">
                           <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[14px] font-medium">
-                            {initials(friend.name, friend.username)}
+                            {friend.avatarUrl ?? initials(friend.name, friend.username)}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
@@ -286,7 +290,7 @@ export default function FriendsPage() {
                       <>
                         <Avatar className="h-10 w-10 shrink-0">
                           <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[14px] font-medium">
-                            {initials(friend.name, friend.username)}
+                            {friend.avatarUrl ?? initials(friend.name, friend.username)}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0 ml-3">

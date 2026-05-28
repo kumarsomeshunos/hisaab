@@ -227,23 +227,25 @@ export default function DashboardPage() {
                   : `${expense.paidBy.name ?? expense.paidBy.username ?? "Someone"} paid`;
                 return (
                   <div key={expense.id} className={cn("flex items-center gap-3 px-4 py-3.5", i > 0 && "border-t border-black/[0.06]")}>
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
-                      <Receipt className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[14px] font-light truncate">{expense.title}</p>
-                      <p className="text-[12px] text-muted-foreground font-light">
-                        {payerLabel}
-                        {" · "}
-                        {new Date(expense.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-[14px] font-light tabular-nums">₹{formatPaise(expense.amount)}</p>
-                      <p className="text-[11px] font-light text-muted-foreground tabular-nums">
-                        your share ₹{formatPaise(expense.myShare)}
-                      </p>
-                    </div>
+                    <Link href={`/expenses/${expense.id}`} className="flex flex-1 items-center gap-3 min-w-0 hover:opacity-80 transition-opacity duration-150">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
+                        <Receipt className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-light truncate">{expense.title}</p>
+                        <p className="text-[12px] text-muted-foreground font-light">
+                          {payerLabel}
+                          {" · "}
+                          {new Date(expense.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[14px] font-light tabular-nums">₹{formatPaise(expense.amount)}</p>
+                        <p className="text-[11px] font-light text-muted-foreground tabular-nums">
+                          your share ₹{formatPaise(expense.myShare)}
+                        </p>
+                      </div>
+                    </Link>
                     {isMyExpense && (
                       <button
                         onClick={() => handleDelete(expense.id)}

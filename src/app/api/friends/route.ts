@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     await writeActivity({
       type: "friend_added",
       actorId: user.id,
-      payload: { friendId: target.id, friendName: target.name, friendUsername: target.username },
+      payload: { friendId: target.id, friendName: target.name, friendUsername: target.username, actorName: user.name ?? user.username ?? null },
       visibleToUserIds: [user.id, target.id],
     });
 

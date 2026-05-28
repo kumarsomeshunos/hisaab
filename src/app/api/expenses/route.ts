@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { eq, or, inArray, desc, and, sql, ilike, gte, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, friendships, expenses, expenseSplits, guestContacts, groups, groupMembers } from "@/lib/db/schema";
+import { users, friendships, expenses, expenseSplits, guestContacts, groups, groupMembers, settlements } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { writeActivity } from "@/lib/activity";
 
@@ -323,7 +323,7 @@ export async function POST(request: NextRequest) {
       type: "expense_added",
       actorId: user.id,
       groupId: groupId ?? null,
-      payload: { expenseId: expense.id, title, amount: totalPaise, groupName },
+      payload: { expenseId: expense.id, title, amount: totalPaise, groupName, actorName: user.name ?? user.username ?? null },
       visibleToUserIds: participantUserIds,
     });
 
@@ -425,6 +425,19 @@ export async function GET(request: NextRequest) {
       for (const g of guestRows) guestPayerMap.set(g.id, g.name);
     }
 
+    // Compute settled flag: for expenses where viewer is not payer, check total settlements to that payer
+    const payerIds = [...new Set(page.filter((r) => r.paidById && r.paidById !== user.id).map((r) => r.paidById as string))];
+    const settlementTotals = new Map<string, number>();
+    if (payerIds.length > 0) {
+      const settlRows = await db
+        .select({ toUserId: settlements.toUserId, amount: settlements.amount })
+        .from(settlements)
+        .where(and(eq(settlements.fromUserId, user.id), inArray(settlements.toUserId, payerIds)));
+      for (const s of settlRows) {
+        if (s.toUserId) settlementTotals.set(s.toUserId, (settlementTotals.get(s.toUserId) ?? 0) + (s.amount ?? 0));
+      }
+    }
+
     let nextCursor: string | null = null;
     if (hasMore) {
       const last = page[page.length - 1];
@@ -443,6 +456,7 @@ export async function GET(request: NextRequest) {
       paidBy: r.paidById
         ? { type: "user" as const, id: r.paidById, name: r.paidByName, username: r.paidByUsername }
         : { type: "guest" as const, id: r.paidByGuestId!, name: guestPayerMap.get(r.paidByGuestId!) ?? "Unknown" },
+      settled: r.paidById === user.id ? true : (settlementTotals.get(r.paidById ?? "") ?? 0) >= r.myShare,
     }));
 
     return NextResponse.json({ expenses: result, nextCursor });

@@ -90,6 +90,10 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
   const [submittingComment, setSubmittingComment] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
 
+  const [settleOpen, setSettleOpen] = useState(false);
+  const [settleNote, setSettleNote] = useState("");
+  const [settling, setSettling] = useState(false);
+
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((d) => {
       if (d.user) setCurrentUser({ id: d.user.id, name: d.user.name ?? null, username: d.user.username ?? null });
@@ -149,6 +153,32 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [expenseId, fetchExpense]);
 
+  const handleSettle = useCallback(async (mySplit: Split, payerId: string) => {
+    setSettling(true);
+    try {
+      const res = await fetch("/api/settlements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ friendUserId: payerId, amount: mySplit.amount / 100, direction: "i_paid", note: settleNote.trim() || undefined }),
+      });
+      if (!res.ok) return;
+      setExpense((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          splits: prev.splits.map((s) =>
+            s.type === "user" && s.id === mySplit.id ? { ...s, settlementStatus: "settled" as const } : s
+          ),
+        };
+      });
+      window.dispatchEvent(new CustomEvent("settlement-recorded"));
+      setSettleOpen(false);
+      setSettleNote("");
+    } finally {
+      setSettling(false);
+    }
+  }, [settleNote]);
+
   if (loading) {
     return (
       <AppShell>
@@ -172,6 +202,8 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
 
   const isCreator = expense.createdById === currentUser?.id;
   const cat = categoryDisplay(expense.category);
+  const mySplit = currentUser ? expense.splits.find((s) => s.type === "user" && s.id === currentUser.id) : undefined;
+  const canSettle = !expense.groupId && mySplit?.settlementStatus === "pending" && expense.paidBy.type === "user" && expense.paidBy.id !== currentUser?.id;
 
   const editInitial = isCreator && currentUser ? {
     id: expense.id,
@@ -290,6 +322,47 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
             ))}
           </div>
         </section>
+
+        {/* Settle Up */}
+        {canSettle && mySplit && expense.paidBy.type === "user" && (
+          settleOpen ? (
+            <div className="rounded-2xl border border-black/[0.06] bg-card px-5 py-4 space-y-3">
+              <p className="text-[13px] font-light text-muted-foreground text-center">
+                Recording that you paid {expense.paidBy.name ?? expense.paidBy.username ?? "them"} ₹{formatPaise(mySplit.amount)}
+              </p>
+              <Input
+                type="text"
+                placeholder="Note (optional)"
+                value={settleNote}
+                onChange={(e) => setSettleNote(e.target.value)}
+                maxLength={200}
+                className="h-9 text-[14px] font-light rounded-xl border-black/[0.1]"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setSettleOpen(false); setSettleNote(""); }}
+                  className="flex-1 py-2.5 rounded-xl text-[13px] font-light text-muted-foreground hover:text-foreground border border-black/[0.06] transition-colors duration-150"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleSettle(mySplit, expense.paidBy.id)}
+                  disabled={settling}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-white text-[13px] font-medium hover:bg-emerald-600 disabled:opacity-40 transition-colors duration-150 flex items-center justify-center"
+                >
+                  {settling ? <Loader2 className="h-4 w-4 animate-spin" /> : "Record"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setSettleOpen(true)}
+              className="w-full py-3 rounded-2xl border border-emerald-200 text-emerald-700 text-[14px] font-light hover:bg-emerald-50 transition-colors duration-150"
+            >
+              Settle Up
+            </button>
+          )
+        )}
 
         {/* Comments */}
         <section>

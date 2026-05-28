@@ -23,6 +23,7 @@ type FriendProfile = {
   name: string | null;
   username: string | null;
   upiId: string | null;
+  avatar: string | null;
 };
 
 type MutualGroup = { id: string; name: string; myBalance: number };
@@ -100,6 +101,7 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
       if (!res.ok) return;
       const paise = Math.round(amount * 100);
       setBalance((b) => direction === "i_paid" ? b + paise : b - paise);
+      window.dispatchEvent(new CustomEvent("settlement-recorded"));
       setSettleOpen(false);
       setSettleAmountStr("");
       setSettleNote("");
@@ -151,7 +153,7 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
         <div className="flex flex-col items-center gap-3 pt-2">
           <Avatar className="h-20 w-20">
             <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[32px] font-light">
-              {initials(friend.name, friend.username)}
+              {friend.avatar ?? initials(friend.name, friend.username)}
             </AvatarFallback>
           </Avatar>
           <div className="text-center">
