@@ -7,6 +7,7 @@ export const users = pgTable("users", {
   name: text("name"),
   username: text("username").unique(),
   avatarUrl: text("avatar_url"),
+  upiId: text("upi_id"),
   isOnboarded: boolean("is_onboarded").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -126,12 +127,25 @@ export const activityLog = pgTable("activity_log", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const userCategories = pgTable("user_categories", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  ownerId: uuid("owner_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  icon: text("icon"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const expenses = pgTable(
   "expenses",
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-    description: text("description").notNull(),
+    title: text("title").notNull().default("Untitled"),
+    notes: text("notes"),
     amount: integer("amount").notNull(),
+    splitMode: text("split_mode").notNull().default("equal"),
+    category: text("category"),
     groupId: uuid("group_id")
       .references(() => groups.id, { onDelete: "restrict" }),
     // Exactly one of paidById / paidByGuestId must be non-null (enforced by check constraint)
@@ -164,12 +178,25 @@ export const expenseSplits = pgTable(
     guestId: uuid("guest_id")
       .references(() => guestContacts.id, { onDelete: "restrict" }),
     amount: integer("amount").notNull(),
+    rawValue: text("raw_value"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     check("split_exactly_one_participant", sql`num_nulls(${t.userId}, ${t.guestId}) = 1`),
   ]
 );
+
+export const expenseComments = pgTable("expense_comments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  expenseId: uuid("expense_id")
+    .notNull()
+    .references(() => expenses.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
@@ -180,5 +207,7 @@ export type Group = typeof groups.$inferSelect;
 export type GroupMember = typeof groupMembers.$inferSelect;
 export type Settlement = typeof settlements.$inferSelect;
 export type ActivityLogEntry = typeof activityLog.$inferSelect;
+export type UserCategory = typeof userCategories.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type ExpenseSplit = typeof expenseSplits.$inferSelect;
+export type ExpenseComment = typeof expenseComments.$inferSelect;

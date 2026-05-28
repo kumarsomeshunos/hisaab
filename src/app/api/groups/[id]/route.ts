@@ -38,6 +38,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         userId: groupMembers.userId,
         name: users.name,
         username: users.username,
+        upiId: users.upiId,
       })
       .from(groupMembers)
       .innerJoin(users, eq(groupMembers.userId, users.id))
@@ -122,6 +123,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         id: m.userId!,
         name: m.name,
         username: m.username,
+        upiId: m.upiId ?? null,
         phone: null as string | null,
         net: netMap.get(`user:${m.userId}`) ?? 0,
       })),

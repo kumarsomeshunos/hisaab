@@ -1,29 +1,32 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Loader2, Check, BookUser, UserPlus } from "lucide-react";
+import { X, Loader2, Check, BookUser, UserPlus, Plus, Minus } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { DEFAULT_CATEGORIES } from "@/lib/categories";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+type SplitMode = "equal" | "exact" | "percentage" | "shares" | "one_owes_all" | "adjustment";
 
 type UserParticipant = {
   kind: "user";
   id: string;
   name: string | null;
   username: string | null;
-  amountStr: string;
+  rawValue: string;
 };
 
 type GuestParticipant = {
   kind: "guest";
-  localId: string;     // client-side key (crypto.randomUUID())
-  guestId: string | null;  // null = new, set after submit
+  localId: string;
+  guestId: string | null;
   name: string;
   phone: string | null;
-  amountStr: string;
+  rawValue: string;
 };
 
 type Participant = UserParticipant | GuestParticipant;
@@ -34,7 +37,7 @@ type PaidByRef =
 
 type AppFriend = { id: string; name: string | null; username: string | null };
 type SavedGuest = { id: string; name: string; phone: string | null };
-type SplitType = "equal" | "exact";
+type CategoryItem = { key: string; name: string; icon: string };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -48,8 +51,7 @@ function participantName(p: Participant, currentUserId: string): string {
 }
 
 function participantInitials(p: Participant, currentUserId: string): string {
-  const name = participantName(p, currentUserId);
-  return name.trim().charAt(0).toUpperCase();
+  return participantName(p, currentUserId).trim().charAt(0).toUpperCase();
 }
 
 function formatPaise(paise: number): string {
@@ -65,7 +67,28 @@ const contactPickerSupported =
   "contacts" in navigator &&
   "ContactsManager" in window;
 
+const SPLIT_MODES: { mode: SplitMode; label: string }[] = [
+  { mode: "equal", label: "Equally" },
+  { mode: "exact", label: "Exact" },
+  { mode: "percentage", label: "By %" },
+  { mode: "shares", label: "By Shares" },
+  { mode: "adjustment", label: "Adjust" },
+  { mode: "one_owes_all", label: "One Owes All" },
+];
+
 // ── Component ─────────────────────────────────────────────────────────────────
+
+interface EditInitial {
+  id: string;
+  title: string;
+  notes: string;
+  amountRupees: number;
+  date: string;
+  category: string | null;
+  splitMode: string;
+  paidBy: { type: "user" | "guest"; id: string; name: string | null; username?: string | null };
+  splits: { type: "user" | "guest"; id: string; name: string | null; username?: string | null; rawValue: string | null }[];
+}
 
 interface AddExpenseSheetProps {
   currentUser: { id: string; name: string | null; username: string | null };
@@ -74,50 +97,66 @@ interface AddExpenseSheetProps {
   groupId?: string;
   groupName?: string;
   groupMembers?: { type: "user" | "guest"; id: string; name: string | null; username?: string | null; phone?: string | null }[];
+  editInitial?: EditInitial;
 }
 
-export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupName, groupMembers: initialGroupMembers }: AddExpenseSheetProps) {
+export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupName, groupMembers: initialGroupMembers, editInitial }: AddExpenseSheetProps) {
   // Form fields
-  const [description, setDescription] = useState("");
-  const [amountStr, setAmountStr] = useState("");
-  const [dateStr, setDateStr] = useState(todayStr());
-  const [splitType, setSplitType] = useState<SplitType>("equal");
+  const [title, setTitle] = useState(editInitial?.title ?? "");
+  const [notes, setNotes] = useState(editInitial?.notes ?? "");
+  const [notesExpanded, setNotesExpanded] = useState(!!editInitial?.notes);
+  const [amountStr, setAmountStr] = useState(editInitial ? String(editInitial.amountRupees) : "");
+  const [dateStr, setDateStr] = useState(editInitial?.date ?? todayStr());
+  const [splitMode, setSplitMode] = useState<SplitMode>((editInitial?.splitMode as SplitMode) ?? "equal");
+  const [category, setCategory] = useState<string | null>(editInitial?.category ?? null);
 
-  // Participants — starts with current user (+ group members if provided)
+  // Participants — seeded from editInitial in edit mode, else current user (+ group members)
   const [participants, setParticipants] = useState<Participant[]>(() => {
-    const self: UserParticipant = { kind: "user", id: currentUser.id, name: currentUser.name, username: currentUser.username, amountStr: "" };
+    if (editInitial) {
+      return editInitial.splits.map((s) =>
+        s.type === "user"
+          ? ({ kind: "user", id: s.id, name: s.name, username: s.username ?? null, rawValue: s.rawValue ?? "" } as UserParticipant)
+          : ({ kind: "guest", localId: s.id, guestId: s.id, name: s.name ?? "", phone: null, rawValue: s.rawValue ?? "" } as GuestParticipant)
+      );
+    }
+    const self: UserParticipant = { kind: "user", id: currentUser.id, name: currentUser.name, username: currentUser.username, rawValue: "" };
     if (!initialGroupMembers) return [self];
     const extras: Participant[] = initialGroupMembers
       .filter((m) => !(m.type === "user" && m.id === currentUser.id))
       .map((m) =>
         m.type === "user"
-          ? { kind: "user", id: m.id, name: m.name, username: m.username ?? null, amountStr: "" } as UserParticipant
-          : { kind: "guest", localId: crypto.randomUUID(), guestId: m.id, name: m.name ?? "", phone: m.phone ?? null, amountStr: "" } as GuestParticipant
+          ? { kind: "user", id: m.id, name: m.name, username: m.username ?? null, rawValue: "" } as UserParticipant
+          : { kind: "guest", localId: crypto.randomUUID(), guestId: m.id, name: m.name ?? "", phone: m.phone ?? null, rawValue: "" } as GuestParticipant
       );
     return [self, ...extras];
   });
-  const [paidByRef, setPaidByRef] = useState<PaidByRef>({ kind: "user", id: currentUser.id });
+  const [paidByRef, setPaidByRef] = useState<PaidByRef>(() => {
+    if (editInitial) {
+      return editInitial.paidBy.type === "user"
+        ? { kind: "user", id: editInitial.paidBy.id }
+        : { kind: "guest", localId: editInitial.paidBy.id };
+    }
+    return { kind: "user", id: currentUser.id };
+  });
 
-  // App friend search
+  // Search
   const [friendQuery, setFriendQuery] = useState("");
   const [allFriends, setAllFriends] = useState<AppFriend[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(true);
-
-  // Saved guest contacts
   const [savedGuests, setSavedGuests] = useState<SavedGuest[]>([]);
   const [guestQuery, setGuestQuery] = useState("");
-
-  // Manual guest name fallback (when Contact Picker unavailable)
   const [manualGuestName, setManualGuestName] = useState("");
+
+  // Categories
+  const [customCategories, setCustomCategories] = useState<CategoryItem[]>([]);
 
   // Submission
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const descriptionRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { setTimeout(() => descriptionRef.current?.focus(), 150); }, []);
+  const titleRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { setTimeout(() => titleRef.current?.focus(), 150); }, []);
 
-  // Load friends and saved guest contacts once on mount
   useEffect(() => {
     fetch("/api/friends")
       .then((r) => r.json())
@@ -128,73 +167,97 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
       .then((r) => r.json())
       .then((d) => setSavedGuests(d.guests ?? []))
       .catch(() => {});
+    fetch("/api/categories")
+      .then((r) => r.json())
+      .then((d) => setCustomCategories(d.custom ?? []))
+      .catch(() => {});
   }, []);
 
-  // ── Participant mutation helpers ────────────────────────────────────────────
+  const allCategories: CategoryItem[] = [
+    ...DEFAULT_CATEGORIES.map((c) => ({ key: c.key, name: c.name, icon: c.icon as string })),
+    ...customCategories,
+  ];
+
+  // ── Participant helpers ────────────────────────────────────────────────────
+
+  const handleModeChange = useCallback((mode: SplitMode) => {
+    setSplitMode(mode);
+    setParticipants((prev) => prev.map((p) => ({ ...p, rawValue: "" })));
+  }, []);
 
   const addUserParticipant = useCallback((friend: AppFriend) => {
-    setParticipants((prev) => [
-      ...prev,
-      { kind: "user", id: friend.id, name: friend.name, username: friend.username, amountStr: "" },
-    ]);
+    setParticipants((prev) => [...prev, { kind: "user", id: friend.id, name: friend.name, username: friend.username, rawValue: "" }]);
     setFriendQuery("");
   }, []);
 
   const addGuestParticipant = useCallback((name: string, phone: string | null, guestId: string | null = null) => {
-    const localId = crypto.randomUUID();
-    setParticipants((prev) => [
-      ...prev,
-      { kind: "guest", localId, guestId, name, phone, amountStr: "" },
-    ]);
+    setParticipants((prev) => [...prev, { kind: "guest", localId: crypto.randomUUID(), guestId, name, phone, rawValue: "" }]);
   }, []);
 
   const removeParticipant = useCallback((key: string) => {
-    setParticipants((prev) => {
-      const next = prev.filter((p) => participantKey(p) !== key);
-      return next;
-    });
-    // If removed participant was payer, revert to self
+    setParticipants((prev) => prev.filter((p) => participantKey(p) !== key));
     setPaidByRef((ref) => {
       const refKey = ref.kind === "user" ? `user:${ref.id}` : `guest:${ref.localId}`;
       return refKey === key ? { kind: "user", id: currentUser.id } : ref;
     });
   }, [currentUser.id]);
 
-  const updateExactAmount = useCallback((key: string, val: string) => {
-    setParticipants((prev) =>
-      prev.map((p) => participantKey(p) === key ? { ...p, amountStr: val } : p)
-    );
+  const updateRawValue = useCallback((key: string, val: string) => {
+    setParticipants((prev) => prev.map((p) => participantKey(p) === key ? { ...p, rawValue: val } : p));
+  }, []);
+
+  const nudgeExact = useCallback((key: string, delta: number) => {
+    setParticipants((prev) => prev.map((p) => {
+      if (participantKey(p) !== key) return p;
+      const next = Math.max(0, (parseFloat(p.rawValue) || 0) + delta);
+      return { ...p, rawValue: next.toFixed(2) };
+    }));
+  }, []);
+
+  const setDebtor = useCallback((key: string) => {
+    setParticipants((prev) => prev.map((p) => ({ ...p, rawValue: participantKey(p) === key ? "all" : "0" })));
   }, []);
 
   // ── Contact Picker ─────────────────────────────────────────────────────────
 
   const handleContactPicker = useCallback(async () => {
     try {
-      // @ts-expect-error — Contact Picker API not in TS lib yet
+      // @ts-expect-error — Contact Picker API not in TS lib
       const contacts = await navigator.contacts.select(["name", "tel"], { multiple: true });
       for (const contact of contacts) {
         const name: string = contact.name?.[0] ?? "Unknown";
         const phone: string | null = contact.tel?.[0] ?? null;
         if (name) addGuestParticipant(name, phone, null);
       }
-    } catch {
-      // User cancelled or permission denied — silently ignore
-    }
+    } catch { /* User cancelled */ }
   }, [addGuestParticipant]);
 
-  // ── Split computation ──────────────────────────────────────────────────────
+  // ── Split display ──────────────────────────────────────────────────────────
 
   const totalPaise = Math.round((parseFloat(amountStr) || 0) * 100);
   const n = participants.length;
+
   const equalBase = n > 0 ? Math.floor(totalPaise / n) : 0;
   const equalRemainder = n > 0 ? totalPaise - equalBase * n : 0;
   const equalSplit = (idx: number) => equalBase + (idx < equalRemainder ? 1 : 0);
 
-  const exactTotal = participants.reduce((s, p) => s + Math.round((parseFloat(p.amountStr) || 0) * 100), 0);
+  const exactTotal = participants.reduce((s, p) => s + Math.round((parseFloat(p.rawValue) || 0) * 100), 0);
   const exactRemaining = totalPaise - exactTotal;
   const exactSumsMatch = exactTotal === totalPaise && totalPaise > 0;
 
-  // ── Payer cycling ──────────────────────────────────────────────────────────
+  const pctTotal = participants.reduce((s, p) => s + (parseFloat(p.rawValue) || 0), 0);
+  const pctValid = totalPaise > 0 && Math.abs(pctTotal - 100) <= 0.01;
+  const computedPctAmount = (idx: number) => Math.round((totalPaise * (parseFloat(participants[idx].rawValue) || 0)) / 100);
+
+  const shareTotal = participants.reduce((s, p) => s + (parseFloat(p.rawValue) || 0), 0);
+  const sharesValid = totalPaise > 0 && shareTotal > 0 && participants.every((p) => (parseFloat(p.rawValue) || 0) > 0);
+  const computedShareAmount = (idx: number) => shareTotal > 0 ? Math.round((totalPaise * (parseFloat(participants[idx].rawValue) || 0)) / shareTotal) : 0;
+
+  const debtorParticipant = participants.find((p) => p.rawValue === "all");
+  const debtorKey = debtorParticipant ? participantKey(debtorParticipant) : null;
+  const oneOwesAllValid = totalPaise > 0 && debtorKey != null;
+
+  // ── Payer ──────────────────────────────────────────────────────────────────
 
   const paidByParticipant = participants.find((p) => {
     if (paidByRef.kind === "user" && p.kind === "user") return p.id === paidByRef.id;
@@ -210,13 +273,17 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
 
   // ── Validation ─────────────────────────────────────────────────────────────
 
-  const canSubmit =
-    description.trim().length > 0 &&
-    totalPaise > 0 &&
-    participants.length >= 2 &&
-    participants.some((p) => participantKey(p) === participantKey(paidByParticipant)) &&
-    (splitType === "equal" || exactSumsMatch) &&
-    !submitting;
+  const splitValid = (() => {
+    if (n < 2 || totalPaise <= 0) return false;
+    if (splitMode === "equal") return true;
+    if (splitMode === "exact" || splitMode === "adjustment") return exactSumsMatch;
+    if (splitMode === "percentage") return pctValid;
+    if (splitMode === "shares") return sharesValid;
+    if (splitMode === "one_owes_all") return oneOwesAllValid;
+    return false;
+  })();
+
+  const canSubmit = title.trim().length > 0 && splitValid && !submitting;
 
   // ── Submission ─────────────────────────────────────────────────────────────
 
@@ -231,25 +298,31 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
         return { type: "guest_new" as const, name: paidByParticipant.name, phone: paidByParticipant.phone ?? undefined };
       };
 
-      const buildParticipant = (p: Participant, idx: number) => {
-        const amountField = splitType === "exact" ? { amount: parseFloat(p.amountStr) || 0 } : {};
-        if (p.kind === "user") return { type: "user" as const, userId: p.id, ...amountField };
-        if (p.guestId) return { type: "guest" as const, guestId: p.guestId, ...amountField };
-        return { type: "guest_new" as const, name: p.name, phone: p.phone ?? undefined, ...amountField };
+      const buildParticipant = (p: Participant) => {
+        if (p.kind === "user") return { type: "user" as const, userId: p.id };
+        if (p.guestId) return { type: "guest" as const, guestId: p.guestId };
+        return { type: "guest_new" as const, name: p.name, phone: p.phone ?? undefined };
       };
 
+      const rawValues: Record<string, string> | undefined = splitMode === "equal"
+        ? undefined
+        : participants.reduce((acc, p) => { acc[participantKey(p)] = p.rawValue; return acc; }, {} as Record<string, string>);
+
       const body = {
-        description: description.trim(),
+        title: title.trim(),
+        ...(notes.trim() ? { notes: notes.trim() } : {}),
         amount: parseFloat(amountStr),
         date: dateStr,
         paidBy: buildPaidBy(),
-        splitType,
+        splitMode,
+        ...(category ? { category } : {}),
         ...(groupId ? { groupId } : {}),
         participants: participants.map(buildParticipant),
+        ...(rawValues ? { rawValues } : {}),
       };
 
-      const res = await fetch("/api/expenses", {
-        method: "POST",
+      const res = await fetch(editInitial ? `/api/expenses/${editInitial.id}` : "/api/expenses", {
+        method: editInitial ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
@@ -263,12 +336,11 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, description, amountStr, dateStr, paidByParticipant, splitType, participants, onSaved, onClose]);
+  }, [canSubmit, title, notes, amountStr, dateStr, paidByParticipant, splitMode, category, participants, groupId, editInitial, onSaved, onClose]);
 
-  // Saved guest search (client-side filter)
-  const addedUserIds = new Set(
-    participants.filter((p): p is UserParticipant => p.kind === "user").map((p) => p.id)
-  );
+  // ── Filtered lists ─────────────────────────────────────────────────────────
+
+  const addedUserIds = new Set(participants.filter((p): p is UserParticipant => p.kind === "user").map((p) => p.id));
   const friendResults = friendQuery.trim().length >= 1
     ? allFriends.filter((f) =>
         !addedUserIds.has(f.id) &&
@@ -277,10 +349,7 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
       )
     : [];
 
-  // Saved guest search (client-side filter)
-  const addedGuestIds = new Set(
-    participants.filter((p): p is GuestParticipant => p.kind === "guest" && p.guestId != null).map((p) => p.guestId!)
-  );
+  const addedGuestIds = new Set(participants.filter((p): p is GuestParticipant => p.kind === "guest" && p.guestId != null).map((p) => p.guestId!));
   const filteredSavedGuests = savedGuests.filter(
     (g) => !addedGuestIds.has(g.id) && (guestQuery.trim() === "" || g.name.toLowerCase().includes(guestQuery.toLowerCase()))
   );
@@ -289,24 +358,18 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
 
   return (
     <>
-      {/* Backdrop */}
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
-
-      {/* Sheet panel — full-screen mobile, centered modal desktop */}
       <div className="fixed inset-0 z-50 flex flex-col bg-background md:inset-auto md:top-6 md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:w-[512px] md:rounded-2xl md:shadow-[0_8px_40px_rgba(0,0,0,0.16)]">
 
-        {/* iOS-style nav bar header */}
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/[0.06] shrink-0 md:rounded-t-2xl">
-          <button
-            onClick={onClose}
-            className="text-[15px] font-light text-muted-foreground hover:text-foreground transition-colors duration-150 min-w-[56px]"
-          >
+          <button onClick={onClose} className="text-[15px] font-light text-muted-foreground hover:text-foreground transition-colors duration-150 min-w-[56px]">
             Cancel
           </button>
-          <span className="text-[17px] font-light tracking-[-0.02em]">
-            Add expense
-            {groupName && <span className="block text-[12px] font-light text-muted-foreground tracking-normal">{groupName}</span>}
-          </span>
+          <div className="text-center">
+            <span className="text-[17px] font-light tracking-[-0.02em]">{editInitial ? "Edit expense" : "Add expense"}</span>
+            {groupName && <p className="text-[12px] font-light text-muted-foreground">{groupName}</p>}
+          </div>
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}
@@ -316,7 +379,7 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
           </button>
         </div>
 
-        {/* Scrollable form body */}
+        {/* Body */}
         <div className="overflow-y-auto flex-1 px-4 py-5 space-y-6 pb-10">
 
           {/* DETAILS */}
@@ -324,19 +387,42 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
             <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1 pb-1">Details</p>
             <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
               <div className="flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06]">
-                <span className="text-[13px] font-light text-muted-foreground w-20 shrink-0">Description</span>
+                <span className="text-[13px] font-light text-muted-foreground w-16 shrink-0">Title</span>
                 <Input
-                  ref={descriptionRef}
+                  ref={titleRef}
                   type="text"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
                   placeholder="Dinner at Social"
                   maxLength={200}
                   className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
                 />
               </div>
+
+              {!notesExpanded ? (
+                <button
+                  onClick={() => setNotesExpanded(true)}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06] text-left hover:bg-black/[0.02] transition-colors duration-150"
+                >
+                  <span className="text-[13px] font-light text-muted-foreground/60 w-16 shrink-0">Notes</span>
+                  <span className="text-[13px] font-light text-muted-foreground/40">+ Add notes</span>
+                </button>
+              ) : (
+                <div className="border-b border-black/[0.06] px-4 py-3">
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Add notes…"
+                    maxLength={1000}
+                    rows={3}
+                    autoFocus
+                    className="w-full resize-none bg-transparent text-[14px] font-light text-foreground placeholder:text-muted-foreground/40 focus:outline-none leading-relaxed"
+                  />
+                </div>
+              )}
+
               <div className="flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06]">
-                <span className="text-[13px] font-light text-muted-foreground w-20 shrink-0">Amount</span>
+                <span className="text-[13px] font-light text-muted-foreground w-16 shrink-0">Amount</span>
                 <div className="flex items-center gap-1 flex-1">
                   <span className="text-[15px] font-light text-muted-foreground">₹</span>
                   <Input
@@ -351,14 +437,39 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
                   />
                 </div>
               </div>
+
               <div className="flex items-center gap-3 px-4 py-3.5">
-                <span className="text-[13px] font-light text-muted-foreground w-20 shrink-0">Date</span>
+                <span className="text-[13px] font-light text-muted-foreground w-16 shrink-0">Date</span>
                 <Input
                   type="date"
                   value={dateStr}
                   onChange={(e) => setDateStr(e.target.value)}
                   className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light focus-visible:ring-0 focus-visible:ring-offset-0"
                 />
+              </div>
+            </div>
+          </div>
+
+          {/* CATEGORY */}
+          <div className="space-y-1">
+            <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1 pb-1">Category</p>
+            <div className="overflow-x-auto pb-1 -mx-4 px-4">
+              <div className="flex gap-2 w-max">
+                {allCategories.map((cat) => (
+                  <button
+                    key={cat.key}
+                    onClick={() => setCategory(cat.key === category ? null : cat.key)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-[13px] font-light whitespace-nowrap transition-colors duration-150 border",
+                      cat.key === category
+                        ? "bg-emerald-500 text-white border-emerald-500 font-medium"
+                        : "bg-card border-black/[0.06] text-foreground hover:bg-black/[0.03]"
+                    )}
+                  >
+                    <span>{cat.icon}</span>
+                    <span>{cat.name}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -373,18 +484,11 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
             >
               <div className="flex items-center gap-3">
                 <Avatar className="h-7 w-7">
-                  <AvatarFallback className={cn(
-                    "text-[11px] font-medium",
-                    paidByParticipant?.kind === "user"
-                      ? "bg-emerald-500/15 text-emerald-700"
-                      : "bg-zinc-200 text-zinc-600"
-                  )}>
+                  <AvatarFallback className={cn("text-[11px] font-medium", paidByParticipant?.kind === "user" ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-200 text-zinc-600")}>
                     {paidByParticipant ? participantInitials(paidByParticipant, currentUser.id) : "?"}
                   </AvatarFallback>
                 </Avatar>
-                <span className="text-[15px] font-light">
-                  {paidByParticipant ? participantName(paidByParticipant, currentUser.id) : "Select"}
-                </span>
+                <span className="text-[15px] font-light">{paidByParticipant ? participantName(paidByParticipant, currentUser.id) : "Select"}</span>
                 {paidByParticipant?.kind === "guest" && (
                   <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded-md">Guest</span>
                 )}
@@ -397,7 +501,6 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
           <div className="space-y-2">
             <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1">Split with</p>
 
-            {/* App friend search + Contacts button */}
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
@@ -407,22 +510,15 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
                   onChange={(e) => setFriendQuery(e.target.value)}
                   className="h-10 rounded-xl border-black/[0.1] bg-white pl-4 pr-10 text-[14px] font-light placeholder:text-muted-foreground/50 focus-visible:ring-emerald-500/25 focus-visible:border-emerald-400"
                 />
-                {friendsLoading && (
-                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-                )}
+                {friendsLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
               </div>
               {contactPickerSupported && (
-                <button
-                  onClick={handleContactPicker}
-                  title="Pick from contacts"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-black/[0.1] bg-white text-muted-foreground hover:bg-black/[0.03] hover:text-foreground transition-colors duration-150"
-                >
+                <button onClick={handleContactPicker} title="Pick from contacts" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-black/[0.1] bg-white text-muted-foreground hover:bg-black/[0.03] hover:text-foreground transition-colors duration-150">
                   <BookUser className="h-4 w-4" strokeWidth={1.5} />
                 </button>
               )}
             </div>
 
-            {/* App friend search results */}
             {friendResults.length > 0 && (
               <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
                 {friendResults.map((friend, i) => (
@@ -442,7 +538,6 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
               </div>
             )}
 
-            {/* Manual guest add (shown when Contact Picker not supported or as extra option) */}
             {!contactPickerSupported && (
               <div className="flex gap-2">
                 <Input
@@ -459,12 +554,7 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
                   className="h-10 flex-1 rounded-xl border-black/[0.1] bg-white pl-4 text-[14px] font-light placeholder:text-muted-foreground/50 focus-visible:ring-emerald-500/25 focus-visible:border-emerald-400"
                 />
                 <button
-                  onClick={() => {
-                    if (manualGuestName.trim()) {
-                      addGuestParticipant(manualGuestName.trim(), null, null);
-                      setManualGuestName("");
-                    }
-                  }}
+                  onClick={() => { if (manualGuestName.trim()) { addGuestParticipant(manualGuestName.trim(), null, null); setManualGuestName(""); } }}
                   disabled={!manualGuestName.trim()}
                   className="flex h-10 items-center gap-1.5 px-3 rounded-xl bg-zinc-100 text-zinc-700 text-[13px] font-light hover:bg-zinc-200 disabled:opacity-40 transition-colors duration-150 shrink-0"
                 >
@@ -473,7 +563,6 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
               </div>
             )}
 
-            {/* Saved guest contacts quick-search */}
             {savedGuests.length > 0 && (
               <div className="space-y-1.5">
                 <Input
@@ -488,9 +577,7 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
                     {filteredSavedGuests.slice(0, 5).map((g, i) => (
                       <div key={g.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
                         <Avatar className="h-8 w-8 shrink-0">
-                          <AvatarFallback className="bg-zinc-200 text-zinc-600 text-[12px] font-medium">
-                            {g.name.charAt(0).toUpperCase()}
-                          </AvatarFallback>
+                          <AvatarFallback className="bg-zinc-200 text-zinc-600 text-[12px] font-medium">{g.name.charAt(0).toUpperCase()}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <p className="text-[14px] font-light truncate">{g.name}</p>
@@ -504,29 +591,19 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
               </div>
             )}
 
-            {/* Participant list */}
             {participants.length > 0 && (
               <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
                 {participants.map((p, i) => (
                   <div key={participantKey(p)} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
                     <Avatar className="h-8 w-8 shrink-0">
-                      <AvatarFallback className={cn(
-                        "text-[12px] font-medium",
-                        p.kind === "user" ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-200 text-zinc-600"
-                      )}>
+                      <AvatarFallback className={cn("text-[12px] font-medium", p.kind === "user" ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-200 text-zinc-600")}>
                         {participantInitials(p, currentUser.id)}
                       </AvatarFallback>
                     </Avatar>
                     <span className="text-[14px] font-light flex-1 truncate">{participantName(p, currentUser.id)}</span>
-                    {p.kind === "guest" && (
-                      <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded-md shrink-0">Guest</span>
-                    )}
+                    {p.kind === "guest" && <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded-md shrink-0">Guest</span>}
                     {!(p.kind === "user" && p.id === currentUser.id) && (
-                      <button
-                        onClick={() => removeParticipant(participantKey(p))}
-                        className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-black/[0.06] transition-colors duration-150"
-                        aria-label="Remove"
-                      >
+                      <button onClick={() => removeParticipant(participantKey(p))} className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-black/[0.06] transition-colors duration-150" aria-label="Remove">
                         <X className="h-3.5 w-3.5" strokeWidth={2} />
                       </button>
                     )}
@@ -541,49 +618,95 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
             <div className="space-y-3">
               <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1">How to split</p>
 
-              <div className="flex rounded-xl border border-black/[0.06] bg-card overflow-hidden">
-                <button
-                  onClick={() => setSplitType("equal")}
-                  className={cn("flex-1 py-2.5 text-[13px] font-light transition-colors duration-150", splitType === "equal" ? "bg-emerald-500 text-white font-medium" : "text-muted-foreground hover:bg-black/[0.02]")}
-                >
-                  Equally
-                </button>
-                <button
-                  onClick={() => setSplitType("exact")}
-                  className={cn("flex-1 py-2.5 text-[13px] font-light transition-colors duration-150", splitType === "exact" ? "bg-emerald-500 text-white font-medium" : "text-muted-foreground hover:bg-black/[0.02]")}
-                >
-                  Custom amounts
-                </button>
+              <div className="grid grid-cols-3 gap-1.5">
+                {SPLIT_MODES.map(({ mode, label }) => (
+                  <button
+                    key={mode}
+                    onClick={() => handleModeChange(mode)}
+                    className={cn(
+                      "py-2.5 rounded-[10px] text-[12px] font-light transition-colors duration-150 border",
+                      splitMode === mode
+                        ? "bg-emerald-500 text-white border-emerald-500 font-medium"
+                        : "bg-card border-black/[0.06] text-muted-foreground hover:bg-black/[0.02]"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
 
               <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
-                {participants.map((p, i) => (
-                  <div key={participantKey(p)} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
-                    <span className="text-[14px] font-light flex-1 truncate">{participantName(p, currentUser.id)}</span>
-                    {p.kind === "guest" && (
-                      <span className="text-[10px] text-zinc-400 shrink-0">Guest</span>
-                    )}
-                    {splitType === "equal" ? (
-                      <span className="text-[14px] font-light text-muted-foreground tabular-nums">₹{formatPaise(equalSplit(i))}</span>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="text-[14px] font-light text-muted-foreground">₹</span>
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          value={p.amountStr}
-                          onChange={(e) => updateExactAmount(participantKey(p), e.target.value)}
-                          placeholder="0"
-                          min="0"
-                          step="0.01"
-                          className="h-7 w-24 border-0 bg-transparent p-0 text-right text-[14px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {participants.map((p, i) => {
+                  const key = participantKey(p);
+                  const isDebtor = key === debtorKey;
 
-                {splitType === "exact" && totalPaise > 0 && (
+                  return (
+                    <div key={key} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
+                      <span className="text-[14px] font-light flex-1 truncate">{participantName(p, currentUser.id)}</span>
+                      {p.kind === "guest" && <span className="text-[10px] text-zinc-400 shrink-0">Guest</span>}
+
+                      {splitMode === "equal" && (
+                        <span className="text-[14px] font-light text-muted-foreground tabular-nums">₹{formatPaise(equalSplit(i))}</span>
+                      )}
+
+                      {splitMode === "exact" && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-[14px] font-light text-muted-foreground">₹</span>
+                          <Input type="number" inputMode="decimal" value={p.rawValue} onChange={(e) => updateRawValue(key, e.target.value)} placeholder="0" min="0" step="0.01" className="h-7 w-24 border-0 bg-transparent p-0 text-right text-[14px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                        </div>
+                      )}
+
+                      {splitMode === "adjustment" && (
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => nudgeExact(key, -1)} className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors duration-150 shrink-0">
+                            <Minus className="h-3 w-3" strokeWidth={2} />
+                          </button>
+                          <div className="flex items-center gap-0.5">
+                            <span className="text-[14px] font-light text-muted-foreground">₹</span>
+                            <Input type="number" inputMode="decimal" value={p.rawValue} onChange={(e) => updateRawValue(key, e.target.value)} placeholder="0" min="0" step="0.01" className="h-7 w-20 border-0 bg-transparent p-0 text-right text-[14px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                          </div>
+                          <button onClick={() => nudgeExact(key, 1)} className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors duration-150 shrink-0">
+                            <Plus className="h-3 w-3" strokeWidth={2} />
+                          </button>
+                        </div>
+                      )}
+
+                      {splitMode === "percentage" && (
+                        <div className="flex items-center gap-1">
+                          <Input type="number" inputMode="decimal" value={p.rawValue} onChange={(e) => updateRawValue(key, e.target.value)} placeholder="0" min="0" max="100" step="0.01" className="h-7 w-16 border-0 bg-transparent p-0 text-right text-[14px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                          <span className="text-[14px] font-light text-muted-foreground">%</span>
+                          {totalPaise > 0 && p.rawValue && (
+                            <span className="text-[12px] font-light text-muted-foreground/60 tabular-nums ml-1">₹{formatPaise(computedPctAmount(i))}</span>
+                          )}
+                        </div>
+                      )}
+
+                      {splitMode === "shares" && (
+                        <div className="flex items-center gap-1.5">
+                          <Input type="number" inputMode="decimal" value={p.rawValue} onChange={(e) => updateRawValue(key, e.target.value)} placeholder="1" min="0" step="0.5" className="h-7 w-16 border-0 bg-transparent p-0 text-right text-[14px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                          <span className="text-[12px] font-light text-muted-foreground/60">shares</span>
+                          {totalPaise > 0 && shareTotal > 0 && p.rawValue && (
+                            <span className="text-[12px] font-light text-muted-foreground/60 tabular-nums">₹{formatPaise(computedShareAmount(i))}</span>
+                          )}
+                        </div>
+                      )}
+
+                      {splitMode === "one_owes_all" && (
+                        <button
+                          onClick={() => setDebtor(key)}
+                          className={cn(
+                            "text-[12px] font-medium px-2.5 py-1 rounded-lg transition-colors duration-150",
+                            isDebtor ? "bg-rose-500 text-white" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"
+                          )}
+                        >
+                          {isDebtor ? `Owes ₹${formatPaise(totalPaise)}` : "₹0"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {(splitMode === "exact" || splitMode === "adjustment") && totalPaise > 0 && (
                   <div className={cn("flex items-center px-4 py-2.5 border-t", exactRemaining === 0 ? "border-emerald-100 bg-emerald-50" : "border-black/[0.06] bg-amber-50")}>
                     <span className={cn("text-[12px] font-light", exactRemaining === 0 ? "text-emerald-700" : "text-amber-700")}>
                       {exactRemaining === 0
@@ -591,6 +714,15 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
                         : exactRemaining > 0
                         ? `₹${formatPaise(exactRemaining)} left to allocate`
                         : `₹${formatPaise(Math.abs(exactRemaining))} over total`}
+                    </span>
+                  </div>
+                )}
+                {splitMode === "percentage" && totalPaise > 0 && (
+                  <div className={cn("flex items-center px-4 py-2.5 border-t", pctValid ? "border-emerald-100 bg-emerald-50" : "border-black/[0.06] bg-amber-50")}>
+                    <span className={cn("text-[12px] font-light", pctValid ? "text-emerald-700" : "text-amber-700")}>
+                      {pctValid
+                        ? <span className="flex items-center gap-1"><Check className="h-3 w-3" strokeWidth={2.5} /> 100%</span>
+                        : `${pctTotal.toFixed(1)}% of 100% — adjust to match`}
                     </span>
                   </div>
                 )}

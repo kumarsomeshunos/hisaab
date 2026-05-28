@@ -13,6 +13,12 @@ const schema = z.object({
       /^[a-z0-9_]{3,30}$/,
       "Username must be 3–30 characters: letters, numbers, underscores only."
     ),
+  upiId: z
+    .string()
+    .trim()
+    .max(50)
+    .refine((v) => v === "" || v.includes("@"), { message: "UPI ID must contain @." })
+    .optional(),
 });
 
 export async function PATCH(request: NextRequest) {
@@ -33,7 +39,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { name, username } = parsed.data;
+    const { name, username, upiId } = parsed.data;
 
     // Username uniqueness — exclude current user so they can keep their own
     const taken = await db
@@ -46,12 +52,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Username is already taken." }, { status: 409 });
     }
 
+    const resolvedUpiId = upiId === "" ? null : (upiId ?? undefined);
+
     await db
       .update(users)
-      .set({ name, username, updatedAt: new Date() })
+      .set({ name, username, ...(resolvedUpiId !== undefined ? { upiId: resolvedUpiId } : {}), updatedAt: new Date() })
       .where(eq(users.id, user.id));
 
-    return NextResponse.json({ success: true, user: { name, username } });
+    return NextResponse.json({ success: true, user: { name, username, upiId: resolvedUpiId ?? null } });
   } catch (err) {
     console.error("[account/PATCH] Unexpected error:", err);
     return NextResponse.json({ error: "Something went wrong." }, { status: 500 });

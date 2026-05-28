@@ -22,7 +22,7 @@ function formatPaise(paise: number): string {
 
 type Expense = {
   id: string;
-  description: string;
+  title: string;
   amount: number;
   date: string;
   paidBy: { type: "user" | "guest"; id: string; name: string | null; username?: string | null };
@@ -231,7 +231,7 @@ export default function DashboardPage() {
                       <Receipt className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[14px] font-light truncate">{expense.description}</p>
+                      <p className="text-[14px] font-light truncate">{expense.title}</p>
                       <p className="text-[12px] text-muted-foreground font-light">
                         {payerLabel}
                         {" · "}

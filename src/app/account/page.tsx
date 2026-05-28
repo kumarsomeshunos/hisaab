@@ -17,6 +17,7 @@ type UserProfile = {
   name: string | null;
   username: string | null;
   avatarUrl: string | null;
+  upiId: string | null;
 };
 
 function initials(name: string | null, username: string | null): string {
@@ -34,6 +35,7 @@ export default function AccountPage() {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
+  const [upiId, setUpiId] = useState("");
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +54,7 @@ export default function AccountPage() {
     if (!user) return;
     setName(user.name ?? "");
     setUsername(user.username ?? "");
+    setUpiId(user.upiId ?? "");
     setUsernameStatus("unchanged");
     setError(null);
     setEditing(true);
@@ -95,7 +98,7 @@ export default function AccountPage() {
       const res = await fetch("/api/account", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), username: username.toLowerCase() }),
+        body: JSON.stringify({ name: name.trim(), username: username.toLowerCase(), upiId: upiId.trim() }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -103,7 +106,7 @@ export default function AccountPage() {
         if (data.error?.toLowerCase().includes("taken")) setUsernameStatus("taken");
         return;
       }
-      setUser((u) => u ? { ...u, name: data.user.name, username: data.user.username } : u);
+      setUser((u) => u ? { ...u, name: data.user.name, username: data.user.username, upiId: data.user.upiId ?? null } : u);
       setEditing(false);
     } finally {
       setSaving(false);
@@ -264,9 +267,31 @@ export default function AccountPage() {
                 </div>
 
                 {/* Email — always read-only */}
-                <div className="flex items-center gap-3 px-4 py-3.5">
+                <div className="flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06]">
                   <span className="text-[14px] font-light text-muted-foreground w-20 shrink-0">Email</span>
                   <span className="flex-1 text-[15px] font-light text-muted-foreground">{user.email}</span>
+                </div>
+
+                {/* UPI ID */}
+                <div className="flex items-center gap-3 px-4 py-3.5">
+                  <span className="text-[14px] font-light text-muted-foreground w-20 shrink-0">UPI ID</span>
+                  {editing ? (
+                    <Input
+                      type="text"
+                      value={upiId}
+                      onChange={(e) => setUpiId(e.target.value)}
+                      placeholder="yourname@upi"
+                      maxLength={50}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                  ) : (
+                    <span className="flex-1 text-[15px] font-light">
+                      {user.upiId ?? <span className="text-muted-foreground">—</span>}
+                    </span>
+                  )}
+                  {!editing && <ChevronRight className="h-4 w-4 text-muted-foreground/40 shrink-0" />}
                 </div>
               </div>
             </div>

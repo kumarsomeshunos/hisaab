@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AddExpenseSheet } from "@/components/expenses/AddExpenseSheet";
 import {
-  ArrowLeft, Receipt, Users, UserPlus, Loader2, Trash2, BookUser, X, Plus, Check
+  ArrowLeft, Receipt, Users, UserPlus, Loader2, Trash2, BookUser, X, Plus, ExternalLink
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,12 +23,13 @@ type Member = {
   name: string | null;
   username?: string | null;
   phone?: string | null;
+  upiId?: string | null;
   net: number;
 };
 
 type GroupExpense = {
   id: string;
-  description: string;
+  title: string;
   amount: number;
   date: string;
   createdById: string;
@@ -289,7 +290,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     <Receipt className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-light truncate">{e.description}</p>
+                    <p className="text-[14px] font-light truncate">{e.title}</p>
                     <p className="text-[12px] text-muted-foreground font-light">
                       {payerLabel} · {new Date(e.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                     </p>
@@ -527,6 +528,15 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                   />
                 </div>
               </div>
+              {settleOpen.net < 0 && settleOpen.type === "user" && settleOpen.upiId && (
+                <a
+                  href={`upi://pay?pa=${encodeURIComponent(settleOpen.upiId)}&pn=${encodeURIComponent(settleOpen.name ?? "")}&am=${settleAmount || "0"}&cu=INR`}
+                  className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-emerald-50 text-emerald-700 text-[14px] font-light hover:bg-emerald-100 transition-colors duration-150"
+                >
+                  <ExternalLink className="h-4 w-4" strokeWidth={1.5} />
+                  Pay via UPI
+                </a>
+              )}
             </div>
           </div>
         </>

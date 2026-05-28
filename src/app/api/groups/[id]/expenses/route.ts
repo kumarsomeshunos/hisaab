@@ -24,7 +24,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const expenseRows = await db
       .select({
         id: expenses.id,
-        description: expenses.description,
+        title: expenses.title,
         amount: expenses.amount,
         date: expenses.date,
         createdById: expenses.createdById,
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const result = expenseRows.map((e) => ({
       id: e.id,
-      description: e.description,
+      title: e.title,
       amount: e.amount,
       date: e.date,
       createdById: e.createdById,

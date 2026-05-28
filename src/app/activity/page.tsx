@@ -55,13 +55,13 @@ function describeEvent(event: ActivityEvent, currentUserId: string): string {
 
   switch (event.type) {
     case "expense_added": {
-      const desc = p.description as string;
+      const desc = (p.title ?? p.description) as string;
       const amount = p.amount as number;
       const groupName = p.groupName as string | undefined;
       return `${actor} added "${desc}" ₹${formatPaise(amount)}${groupName ? ` in ${groupName}` : ""}`;
     }
     case "expense_deleted": {
-      const desc = p.description as string;
+      const desc = (p.title ?? p.description) as string;
       return `${actor} deleted "${desc}"`;
     }
     case "friend_added": {

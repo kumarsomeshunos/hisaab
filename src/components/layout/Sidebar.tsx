@@ -9,11 +9,13 @@ import {
   Activity,
   Settings,
   IndianRupee,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/expenses", label: "Expenses", icon: Receipt },
   { href: "/groups", label: "Groups", icon: Users },
   { href: "/friends", label: "Friends", icon: UserCircle },
   { href: "/activity", label: "Activity", icon: Activity },
