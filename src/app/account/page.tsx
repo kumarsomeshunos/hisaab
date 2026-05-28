@@ -1,0 +1,302 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { Check, X, Loader2, LogOut, ChevronRight } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { AppShell } from "@/components/layout/AppShell";
+import { cn } from "@/lib/utils";
+
+type UsernameStatus = "idle" | "checking" | "available" | "taken" | "invalid" | "unchanged";
+
+type UserProfile = {
+  id: string;
+  email: string;
+  name: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+};
+
+function initials(name: string | null, username: string | null): string {
+  if (name) return name.trim().charAt(0).toUpperCase();
+  if (username) return username.trim().charAt(0).toUpperCase();
+  return "?";
+}
+
+export default function AccountPage() {
+  const router = useRouter();
+
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => setUser(d.user ?? null))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Enter edit mode — seed inputs from current user
+  function startEditing() {
+    if (!user) return;
+    setName(user.name ?? "");
+    setUsername(user.username ?? "");
+    setUsernameStatus("unchanged");
+    setError(null);
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setError(null);
+  }
+
+  // Debounced username availability check
+  useEffect(() => {
+    if (!editing) return;
+    const raw = username.toLowerCase();
+
+    if (raw === (user?.username ?? "").toLowerCase()) {
+      setUsernameStatus("unchanged");
+      return;
+    }
+    if (raw.length === 0) { setUsernameStatus("idle"); return; }
+    if (raw.length < 3 || !/^[a-z0-9_]+$/.test(raw)) { setUsernameStatus("invalid"); return; }
+
+    setUsernameStatus("checking");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/username-check?username=${encodeURIComponent(raw)}`);
+        const data = await res.json();
+        setUsernameStatus(data.available ? "available" : "taken");
+      } catch {
+        setUsernameStatus("idle");
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [username, editing, user]);
+
+  const handleSave = useCallback(async () => {
+    if (!user) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/account", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), username: username.toLowerCase() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Something went wrong.");
+        if (data.error?.toLowerCase().includes("taken")) setUsernameStatus("taken");
+        return;
+      }
+      setUser((u) => u ? { ...u, name: data.user.name, username: data.user.username } : u);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [user, name, username]);
+
+  const handleSignOut = useCallback(async () => {
+    setSigningOut(true);
+    try {
+      await fetch("/api/auth/signout", { method: "POST" });
+    } finally {
+      router.push("/auth");
+    }
+  }, [router]);
+
+  const canSave =
+    name.trim().length >= 2 &&
+    (usernameStatus === "available" || usernameStatus === "unchanged") &&
+    !saving;
+
+  const usernameHint: Partial<Record<UsernameStatus, React.ReactNode>> = {
+    checking: (
+      <span className="flex items-center gap-1 text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" /> Checking…
+      </span>
+    ),
+    available: (
+      <span className="flex items-center gap-1 text-emerald-600">
+        <Check className="h-3 w-3" strokeWidth={2.5} /> Available
+      </span>
+    ),
+    taken: (
+      <span className="flex items-center gap-1 text-rose-500">
+        <X className="h-3 w-3" strokeWidth={2.5} /> Already taken
+      </span>
+    ),
+    invalid: (
+      <span className="text-muted-foreground">3–30 characters — letters, numbers, underscores</span>
+    ),
+  };
+
+  return (
+    <AppShell>
+      {/* Header */}
+      <header className="sticky top-0 z-40 glass border-b border-black/[0.06]">
+        <div className="flex h-14 items-center justify-between px-5 md:px-6">
+          {editing ? (
+            <>
+              <button
+                onClick={cancelEditing}
+                className="text-[15px] font-light text-muted-foreground hover:text-foreground transition-colors duration-150"
+              >
+                Cancel
+              </button>
+              <span className="text-[17px] font-light tracking-[-0.02em]">Account</span>
+              <button
+                onClick={handleSave}
+                disabled={!canSave}
+                className="text-[15px] font-medium text-emerald-600 hover:text-emerald-700 disabled:opacity-40 transition-colors duration-150"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+              </button>
+            </>
+          ) : (
+            <>
+              <h1 className="text-[17px] font-light tracking-[-0.02em]">Account</h1>
+              <button
+                onClick={startEditing}
+                disabled={!user}
+                className="text-[15px] font-medium text-emerald-600 hover:text-emerald-700 disabled:opacity-40 transition-colors duration-150"
+              >
+                Edit
+              </button>
+            </>
+          )}
+        </div>
+      </header>
+
+      <div className="px-4 py-6 md:px-6 md:py-8 max-w-2xl mx-auto space-y-8 pb-20 md:pb-8">
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : user ? (
+          <>
+            {/* Avatar + name hero */}
+            <div className="flex flex-col items-center gap-3 pt-2">
+              <Avatar className="h-20 w-20">
+                <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[32px] font-light">
+                  {initials(user.name, user.username)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="text-center">
+                <p className="text-[20px] font-light tracking-[-0.02em]">{user.name ?? "—"}</p>
+                {user.username && (
+                  <p className="text-[14px] text-muted-foreground font-light">@{user.username}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Profile fields */}
+            <div className="space-y-1">
+              <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1 pb-1">
+                Profile
+              </p>
+              <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
+
+                {/* Name */}
+                <div className="flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06]">
+                  <span className="text-[14px] font-light text-muted-foreground w-20 shrink-0">Name</span>
+                  {editing ? (
+                    <Input
+                      type="text"
+                      value={name}
+                      onChange={(e) => { setName(e.target.value); setError(null); }}
+                      placeholder="Your name"
+                      autoFocus
+                      className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                  ) : (
+                    <span className="flex-1 text-[15px] font-light">{user.name ?? <span className="text-muted-foreground">—</span>}</span>
+                  )}
+                  {!editing && <ChevronRight className="h-4 w-4 text-muted-foreground/40 shrink-0" />}
+                </div>
+
+                {/* Username */}
+                <div className="px-4 py-3.5 border-b border-black/[0.06]">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[14px] font-light text-muted-foreground w-20 shrink-0">Username</span>
+                    {editing ? (
+                      <div className="relative flex-1">
+                        <span className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-[15px] font-light text-muted-foreground select-none">@</span>
+                        <Input
+                          type="text"
+                          value={username}
+                          onChange={(e) =>
+                            setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))
+                          }
+                          maxLength={30}
+                          autoComplete="off"
+                          autoCapitalize="none"
+                          className={cn(
+                            "h-8 w-full border-0 bg-transparent pl-4 p-0 text-[15px] font-light focus-visible:ring-0 focus-visible:ring-offset-0",
+                            usernameStatus === "taken" && "text-rose-500"
+                          )}
+                        />
+                      </div>
+                    ) : (
+                      <span className="flex-1 text-[15px] font-light">
+                        {user.username ? `@${user.username}` : <span className="text-muted-foreground">—</span>}
+                      </span>
+                    )}
+                    {!editing && <ChevronRight className="h-4 w-4 text-muted-foreground/40 shrink-0" />}
+                  </div>
+                  {editing && usernameStatus !== "idle" && usernameStatus !== "unchanged" && (
+                    <p className="text-[12px] font-light mt-1.5 pl-24">{usernameHint[usernameStatus]}</p>
+                  )}
+                </div>
+
+                {/* Email — always read-only */}
+                <div className="flex items-center gap-3 px-4 py-3.5">
+                  <span className="text-[14px] font-light text-muted-foreground w-20 shrink-0">Email</span>
+                  <span className="flex-1 text-[15px] font-light text-muted-foreground">{user.email}</span>
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <p className="text-center text-[13px] font-light text-rose-500">{error}</p>
+            )}
+
+            {/* Sign out */}
+            {!editing && (
+              <Button
+                variant="ghost"
+                onClick={handleSignOut}
+                disabled={signingOut}
+                className="w-full h-11 rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 font-light text-[15px] gap-2 transition-colors duration-150"
+              >
+                {signingOut
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <LogOut className="h-4 w-4" strokeWidth={1.5} />
+                }
+                Sign out
+              </Button>
+            )}
+          </>
+        ) : (
+          <p className="text-center text-[14px] font-light text-muted-foreground py-16">
+            Could not load profile.
+          </p>
+        )}
+      </div>
+    </AppShell>
+  );
+}

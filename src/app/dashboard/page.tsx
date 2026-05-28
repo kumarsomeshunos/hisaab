@@ -1,8 +1,27 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ArrowDownLeft, ArrowUpRight, Receipt, Users } from "lucide-react";
 
+function initials(name: string | null, username: string | null): string {
+  if (name) return name.trim().charAt(0).toUpperCase();
+  if (username) return username.trim().charAt(0).toUpperCase();
+  return "?";
+}
+
 export default function DashboardPage() {
+  const [user, setUser] = useState<{ name: string | null; username: string | null } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => setUser(d.user ?? null))
+      .catch(() => {});
+  }, []);
+
   return (
     <AppShell>
       {/* iOS-style navigation bar — frosted glass, sticky */}
@@ -15,11 +34,13 @@ export default function DashboardPage() {
           <h1 className="hidden md:block text-[15px] font-medium tracking-[-0.01em] text-foreground">
             Overview
           </h1>
-          <Avatar className="h-8 w-8 cursor-pointer ring-[1.5px] ring-black/10">
-            <AvatarFallback className="bg-emerald-500 text-white text-[13px] font-medium">
-              U
-            </AvatarFallback>
-          </Avatar>
+          <Link href="/account">
+            <Avatar className="h-8 w-8 cursor-pointer ring-[1.5px] ring-black/10">
+              <AvatarFallback className="bg-emerald-500 text-white text-[13px] font-medium">
+                {initials(user?.name ?? null, user?.username ?? null)}
+              </AvatarFallback>
+            </Avatar>
+          </Link>
         </div>
       </header>
 
