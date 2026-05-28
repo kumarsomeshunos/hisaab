@@ -9,7 +9,7 @@ export const SESSION_COOKIE_OPTIONS = {
   secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
   path: "/",
-  maxAge: 30 * 24 * 60 * 60, // 30 days
+  maxAge: 365 * 24 * 60 * 60, // 1 year
 };
 
 /** Generates a 32-byte crypto-random session token (64 hex chars). */
@@ -24,7 +24,7 @@ export function generateSessionToken(): string {
 /** Inserts a new session row and returns the token. */
 export async function createSession(userId: string): Promise<string> {
   const token = generateSessionToken();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
   await db.insert(sessions).values({ id: token, userId, expiresAt });
   return token;
 }

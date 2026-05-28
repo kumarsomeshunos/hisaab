@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AddExpenseSheet } from "@/components/expenses/AddExpenseSheet";
 import {
-  ArrowLeft, Receipt, Users, UserPlus, Loader2, Trash2, BookUser, X, Plus, ExternalLink
+  ArrowLeft, Receipt, Users, UserPlus, UserMinus, Loader2, Trash2, BookUser, X, Plus, ExternalLink, Handshake
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { type ActivityEvent, describeEvent, eventHref, relativeTime } from "@/lib/activity-utils";
 
 function formatPaise(paise: number): string {
   return (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -59,6 +60,11 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [settleNote, setSettleNote] = useState("");
   const [settling, setSettling] = useState(false);
 
+  const [activities, setActivities] = useState<ActivityEvent[]>([]);
+  const [actNextCursor, setActNextCursor] = useState<string | null>(null);
+  const [actLoading, setActLoading] = useState(true);
+  const [actLoadingMore, setActLoadingMore] = useState(false);
+
   // Member search state
   const [allFriends, setAllFriends] = useState<AppFriend[]>([]);
   const [savedGuests, setSavedGuests] = useState<SavedGuest[]>([]);
@@ -83,6 +89,27 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   }, [groupId]);
 
   useEffect(() => { fetchGroup(); }, [fetchGroup]);
+
+  useEffect(() => {
+    fetch(`/api/activity?groupId=${groupId}`)
+      .then((r) => r.json())
+      .then((d) => { setActivities(d.events ?? []); setActNextCursor(d.nextCursor ?? null); })
+      .catch(() => {})
+      .finally(() => setActLoading(false));
+  }, [groupId]);
+
+  const loadMoreActivity = useCallback(async () => {
+    if (!actNextCursor || actLoadingMore) return;
+    setActLoadingMore(true);
+    try {
+      const res = await fetch(`/api/activity?groupId=${groupId}&cursor=${encodeURIComponent(actNextCursor)}`);
+      const data = await res.json();
+      setActivities((prev) => [...prev, ...(data.events ?? [])]);
+      setActNextCursor(data.nextCursor ?? null);
+    } finally {
+      setActLoadingMore(false);
+    }
+  }, [groupId, actNextCursor, actLoadingMore]);
 
   useEffect(() => {
     if (!addMemberOpen) return;
@@ -387,6 +414,10 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     <Link href={`/friends/${m.username}`} className="flex flex-1 items-center gap-3 min-w-0 hover:opacity-80 transition-opacity duration-150">
                       {rowContent}
                     </Link>
+                  ) : m.type === "guest" ? (
+                    <Link href={`/contacts/${m.id}`} className="flex flex-1 items-center gap-3 min-w-0 hover:opacity-80 transition-opacity duration-150">
+                      {rowContent}
+                    </Link>
                   ) : (
                     <div className="flex flex-1 items-center gap-3 min-w-0">
                       {rowContent}
@@ -405,6 +436,72 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
               );
             })}
           </div>
+        </section>
+
+        {/* ACTIVITY */}
+        <section className="pb-4 md:pb-0">
+          <p className="text-[13px] font-medium text-muted-foreground tracking-[0.02em] uppercase mb-2 px-1">Activity</p>
+          {actLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : activities.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 rounded-2xl bg-card border border-black/[0.06] text-center">
+              <p className="text-[14px] font-light text-muted-foreground">No activity yet</p>
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-card border border-black/[0.06] overflow-hidden">
+              {activities.map((event, i) => {
+                const href = eventHref(event);
+                const rowClass = cn("flex items-start gap-3 px-4 py-3.5", href && "hover:bg-black/[0.02] transition-colors duration-150", i > 0 && "border-t border-black/[0.06]");
+                const iconBg =
+                  event.type === "expense_added" ? "bg-emerald-500/15" :
+                  event.type === "expense_deleted" ? "bg-rose-100" :
+                  event.type === "settlement_recorded" ? "bg-amber-100" :
+                  "bg-muted";
+                const iconColor =
+                  event.type === "expense_added" ? "text-emerald-700" :
+                  event.type === "expense_deleted" ? "text-rose-500" :
+                  event.type === "settlement_recorded" ? "text-amber-700" :
+                  "text-muted-foreground";
+                const EventIcon =
+                  event.type === "expense_added" || event.type === "expense_deleted" ? <Receipt className="h-4 w-4" strokeWidth={1.5} /> :
+                  event.type === "settlement_recorded" ? <Handshake className="h-4 w-4" strokeWidth={1.5} /> :
+                  event.type === "friend_added" ? <UserPlus className="h-4 w-4" strokeWidth={1.5} /> :
+                  event.type === "friend_removed" ? <UserMinus className="h-4 w-4" strokeWidth={1.5} /> :
+                  <Users className="h-4 w-4" strokeWidth={1.5} />;
+                const content = (
+                  <>
+                    <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-0.5", iconBg)}>
+                      <span className={iconColor}>{EventIcon}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-light leading-snug">
+                        {currentUser ? describeEvent(event, currentUser.id) : "…"}
+                      </p>
+                      <p className="text-[12px] font-light text-muted-foreground mt-0.5">{relativeTime(event.createdAt)}</p>
+                    </div>
+                  </>
+                );
+                return href ? (
+                  <Link key={event.id} href={href} className={rowClass}>{content}</Link>
+                ) : (
+                  <div key={event.id} className={rowClass}>{content}</div>
+                );
+              })}
+              {actNextCursor && (
+                <div className="border-t border-black/[0.06]">
+                  <button
+                    onClick={loadMoreActivity}
+                    disabled={actLoadingMore}
+                    className="w-full py-3.5 text-[13px] font-light text-muted-foreground hover:text-foreground hover:bg-black/[0.02] transition-colors duration-150 flex items-center justify-center gap-2"
+                  >
+                    {actLoadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Load more"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
       </div>

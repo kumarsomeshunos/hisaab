@@ -18,7 +18,7 @@ export async function GET(
     const { username } = await params;
 
     const [target] = await db
-      .select({ id: users.id, name: users.name, username: users.username, upiId: users.upiId, avatarUrl: users.avatarUrl })
+      .select({ id: users.id, name: users.name, username: users.username, upiId: users.upiId, avatarUrl: users.avatarUrl, phone: users.phone })
       .from(users)
       .where(eq(users.username, username))
       .limit(1);
@@ -36,7 +36,52 @@ export async function GET(
       .where(and(eq(friendships.userId, me), eq(friendships.friendId, target.id)))
       .limit(1);
 
-    if (!friendship) return NextResponse.json({ error: "Not found." }, { status: 404 });
+    if (!friendship) {
+      // Allow non-friend group members to view a limited profile
+      const myGRows = await db.select({ groupId: groupMembers.groupId }).from(groupMembers).where(eq(groupMembers.userId, me));
+      const theirGRows = await db.select({ groupId: groupMembers.groupId }).from(groupMembers).where(eq(groupMembers.userId, target.id));
+      const myGSet = new Set(myGRows.map((r) => r.groupId));
+      const mutualIds = theirGRows.map((r) => r.groupId).filter((id) => myGSet.has(id));
+
+      if (mutualIds.length === 0) return NextResponse.json({ error: "Not found." }, { status: 404 });
+
+      const groupRows = await db.select({ id: groups.id, name: groups.name }).from(groups).where(inArray(groups.id, mutualIds));
+
+      const iPaidSplits2 = await db
+        .select({ groupId: expenses.groupId, amount: expenseSplits.amount })
+        .from(expenses).innerJoin(expenseSplits, eq(expenseSplits.expenseId, expenses.id))
+        .where(and(eq(expenses.paidById, me), eq(expenseSplits.userId, target.id), inArray(expenses.groupId, mutualIds)));
+
+      const theyPaidSplits2 = await db
+        .select({ groupId: expenses.groupId, amount: expenseSplits.amount })
+        .from(expenses).innerJoin(expenseSplits, eq(expenseSplits.expenseId, expenses.id))
+        .where(and(eq(expenses.paidById, target.id), eq(expenseSplits.userId, me), inArray(expenses.groupId, mutualIds)));
+
+      const settlementRows2 = await db
+        .select({ groupId: settlements.groupId, fromUserId: settlements.fromUserId, toUserId: settlements.toUserId, amount: settlements.amount })
+        .from(settlements)
+        .where(and(inArray(settlements.groupId, mutualIds), inArray(settlements.fromUserId, [me, target.id])));
+
+      const balByGroup = new Map<string, number>();
+      for (const r of iPaidSplits2) { if (r.groupId) balByGroup.set(r.groupId, (balByGroup.get(r.groupId) ?? 0) + r.amount); }
+      for (const r of theyPaidSplits2) { if (r.groupId) balByGroup.set(r.groupId, (balByGroup.get(r.groupId) ?? 0) - r.amount); }
+      for (const s of settlementRows2) {
+        if (!s.groupId) continue;
+        if (s.fromUserId === me && s.toUserId === target.id) balByGroup.set(s.groupId, (balByGroup.get(s.groupId) ?? 0) + (s.amount ?? 0));
+        else if (s.fromUserId === target.id && s.toUserId === me) balByGroup.set(s.groupId, (balByGroup.get(s.groupId) ?? 0) - (s.amount ?? 0));
+      }
+
+      const limitedGroups = groupRows.map((g) => ({ id: g.id, name: g.name, myBalance: balByGroup.get(g.id) ?? 0 }));
+
+      return NextResponse.json({
+        user: { id: target.id, name: target.name, username: target.username, upiId: null, avatar: target.avatarUrl, phone: null, isFriend: false },
+        balance: 0,
+        mutualGroups: limitedGroups,
+        expenses: [],
+        nextCursor: null,
+        isFriend: false,
+      });
+    }
 
     // --- Mutual groups ---
     const myGroupRows = await db
@@ -234,7 +279,7 @@ export async function GET(
     }
 
     return NextResponse.json({
-      user: { id: target.id, name: target.name, username: target.username, upiId: target.upiId, avatar: target.avatarUrl },
+      user: { id: target.id, name: target.name, username: target.username, upiId: target.upiId, avatar: target.avatarUrl, phone: target.phone },
       balance,
       mutualGroups,
       expenses: sharedExpenses,

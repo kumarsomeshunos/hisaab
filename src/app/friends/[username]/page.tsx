@@ -24,6 +24,8 @@ type FriendProfile = {
   username: string | null;
   upiId: string | null;
   avatar: string | null;
+  phone: string | null;
+  isFriend?: boolean;
 };
 
 type MutualGroup = { id: string; name: string; myBalance: number };
@@ -132,13 +134,14 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
   }
 
   const upiAmount = (Math.abs(balance) / 100).toFixed(2);
+  const isFriend = friend.isFriend ?? true;
 
   return (
     <AppShell>
       <header className="sticky top-0 z-40 glass border-b border-black/[0.06]">
         <div className="flex h-14 items-center gap-3 px-4 md:px-6">
           <Link
-            href="/friends"
+            href={isFriend ? "/friends" : "/groups"}
             className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-black/[0.05] transition-colors duration-150"
           >
             <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
@@ -161,6 +164,9 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
             {friend.username && (
               <p className="text-[14px] text-muted-foreground font-light">@{friend.username}</p>
             )}
+            {!isFriend && (
+              <span className="mt-1 inline-block text-[11px] font-medium uppercase tracking-wide text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-md">Group member</span>
+            )}
           </div>
           {friend.upiId && (
             <a
@@ -171,9 +177,18 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
               Pay via UPI
             </a>
           )}
+          {friend.phone && (
+            <a
+              href={`tel:${friend.phone}`}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-50 text-zinc-700 text-[13px] font-light hover:bg-zinc-100 transition-colors duration-150"
+            >
+              Call
+            </a>
+          )}
         </div>
 
         {/* Balance tile */}
+        {isFriend && (
         <div className={cn(
           "rounded-2xl px-5 py-5 text-center",
           balance > 0 ? "bg-emerald-50" : balance < 0 ? "bg-rose-50" : "bg-muted"
@@ -193,9 +208,10 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
               : `You owe ${friend.name ?? friend.username ?? "them"}`}
           </p>
         </div>
+        )}
 
         {/* Settle Up */}
-        {balance !== 0 && (
+        {isFriend && balance !== 0 && (
           settleOpen ? (
             <div className="rounded-2xl border border-black/[0.06] bg-card px-5 py-4 space-y-3">
               <p className="text-[13px] font-light text-muted-foreground text-center">
@@ -275,6 +291,7 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
         )}
 
         {/* Shared expenses */}
+        {isFriend && (
         <section>
           <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1 pb-1">Shared expenses</p>
           {expenses.length === 0 ? (
@@ -323,6 +340,7 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
             </div>
           )}
         </section>
+        )}
       </div>
     </AppShell>
   );

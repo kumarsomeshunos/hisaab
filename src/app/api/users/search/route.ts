@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
         .select({ id: users.id, name: users.name, username: users.username, avatarUrl: users.avatarUrl })
         .from(users)
         .where(
-          sql`lower(${users.username}) LIKE lower(${query}) || '%'
+          sql`(lower(${users.username}) LIKE lower(${query}) || '%' OR lower(${users.name}) LIKE '%' || lower(${query}) || '%')
           AND ${users.id} != ${user.id}
           AND ${users.id} NOT IN (${friendIdsSq})
           AND ${users.isOnboarded} = true`

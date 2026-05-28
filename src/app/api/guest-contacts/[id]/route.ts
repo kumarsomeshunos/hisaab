@@ -8,6 +8,10 @@ import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
 const updateSchema = z.object({
   name: z.string().trim().min(1).max(60),
   phone: z.string().max(20).optional().nullable(),
+  upiId: z.string().trim().max(50)
+    .refine((v) => v === "" || v.includes("@"), { message: "UPI ID must contain @." })
+    .optional().nullable(),
+  email: z.string().trim().email("Enter a valid email address.").max(200).optional().nullable(),
 });
 
 export async function PATCH(
@@ -29,11 +33,18 @@ export async function PATCH(
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }, { status: 400 });
     }
 
+    const { name, phone, upiId, email } = parsed.data;
+
     const [updated] = await db
       .update(guestContacts)
-      .set({ name: parsed.data.name.trim(), phone: parsed.data.phone ?? null })
+      .set({
+        name: name.trim(),
+        phone: phone ?? null,
+        upiId: upiId === "" ? null : (upiId ?? null),
+        email: email ?? null,
+      })
       .where(and(eq(guestContacts.id, id), eq(guestContacts.ownerId, user.id)))
-      .returning({ id: guestContacts.id, name: guestContacts.name, phone: guestContacts.phone });
+      .returning({ id: guestContacts.id, name: guestContacts.name, phone: guestContacts.phone, upiId: guestContacts.upiId, email: guestContacts.email });
 
     if (!updated) return NextResponse.json({ error: "Guest not found." }, { status: 404 });
 

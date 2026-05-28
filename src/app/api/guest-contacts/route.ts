@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const { user } = sessionData;
 
     const guests = await db
-      .select({ id: guestContacts.id, name: guestContacts.name, phone: guestContacts.phone })
+      .select({ id: guestContacts.id, name: guestContacts.name, phone: guestContacts.phone, upiId: guestContacts.upiId, email: guestContacts.email })
       .from(guestContacts)
       .where(eq(guestContacts.ownerId, user.id))
       .orderBy(asc(guestContacts.name));
@@ -30,6 +30,10 @@ export async function GET(request: NextRequest) {
 const createSchema = z.object({
   name: z.string().trim().min(1).max(60),
   phone: z.string().max(20).optional(),
+  upiId: z.string().trim().max(50)
+    .refine((v) => v === "" || v.includes("@"), { message: "UPI ID must contain @." })
+    .optional().nullable(),
+  email: z.string().trim().email("Enter a valid email address.").max(200).optional().nullable(),
 });
 
 export async function POST(request: NextRequest) {
@@ -50,10 +54,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { name, phone, upiId, email } = parsed.data;
+
     const [guest] = await db
       .insert(guestContacts)
-      .values({ ownerId: user.id, name: parsed.data.name.trim(), phone: parsed.data.phone ?? null })
-      .returning({ id: guestContacts.id, name: guestContacts.name, phone: guestContacts.phone });
+      .values({
+        ownerId: user.id,
+        name: name.trim(),
+        phone: phone ?? null,
+        upiId: upiId === "" ? null : (upiId ?? null),
+        email: email ?? null,
+      })
+      .returning({ id: guestContacts.id, name: guestContacts.name, phone: guestContacts.phone, upiId: guestContacts.upiId, email: guestContacts.email });
 
     return NextResponse.json({ guest }, { status: 201 });
   } catch (err) {

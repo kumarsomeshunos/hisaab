@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, or, desc, lt, and, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { activityLog } from "@/lib/db/schema";
+import { activityLog, groupMembers } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
 
 export async function GET(request: NextRequest) {
@@ -14,16 +14,35 @@ export async function GET(request: NextRequest) {
     const me = sessionData.user.id;
     const limit = 20;
 
-    const cursorParam = request.nextUrl.searchParams.get("cursor");
+    const sp = request.nextUrl.searchParams;
+    const cursorParam = sp.get("cursor");
+    const groupIdParam = sp.get("groupId") || null;
 
-    const visibility = or(
-      eq(activityLog.actorId, me),
-      sql`${me} = ANY(${activityLog.visibleToUserIds})`
-    );
+    let whereClause;
 
-    const whereClause = cursorParam
-      ? and(visibility, lt(activityLog.createdAt, new Date(cursorParam)))
-      : visibility;
+    if (groupIdParam) {
+      // Verify membership
+      const [membership] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, groupIdParam), eq(groupMembers.userId, me)))
+        .limit(1);
+      if (!membership) return NextResponse.json({ error: "Not a member." }, { status: 403 });
+
+      // All events for this group (no visibleToUserIds filter)
+      const groupCondition = eq(activityLog.groupId, groupIdParam);
+      whereClause = cursorParam
+        ? and(groupCondition, lt(activityLog.createdAt, new Date(cursorParam)))
+        : groupCondition;
+    } else {
+      const visibility = or(
+        eq(activityLog.actorId, me),
+        sql`${me} = ANY(${activityLog.visibleToUserIds})`
+      );
+      whereClause = cursorParam
+        ? and(visibility, lt(activityLog.createdAt, new Date(cursorParam)))
+        : visibility;
+    }
 
     const rows = await db
       .select()

@@ -36,7 +36,7 @@ type PaidByRef =
   | { kind: "guest"; localId: string };
 
 type AppFriend = { id: string; name: string | null; username: string | null };
-type SavedGuest = { id: string; name: string; phone: string | null };
+type SavedGuest = { id: string; name: string; phone: string | null; email?: string | null };
 type CategoryItem = { key: string; name: string; icon: string };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -371,7 +371,7 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
   const addedGuestIds = new Set(participants.filter((p): p is GuestParticipant => p.kind === "guest" && p.guestId != null).map((p) => p.guestId!));
   const top3Guests = savedGuests.filter((g) => !addedGuestIds.has(g.id)).slice(0, 3);
   const searchedGuests = guestQuery.trim()
-    ? savedGuests.filter((g) => !addedGuestIds.has(g.id) && g.name.toLowerCase().includes(guestQuery.toLowerCase())).slice(0, 5)
+    ? savedGuests.filter((g) => !addedGuestIds.has(g.id) && (g.name.toLowerCase().includes(guestQuery.toLowerCase()) || (g.email?.toLowerCase().includes(guestQuery.toLowerCase()) ?? false))).slice(0, 5)
     : [];
 
   // ── Render ─────────────────────────────────────────────────────────────────

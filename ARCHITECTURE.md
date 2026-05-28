@@ -235,6 +235,7 @@ Schema implemented in `src/lib/db/schema.ts` (Drizzle ORM / Neon PostgreSQL).
 | `username` | text UNIQUE nullable | Lowercase `^[a-z0-9_]{3,30}$`; set during onboarding |
 | `avatar_url` | text nullable | Reserved for future upload |
 | `upi_id` | text nullable | UPI payment address (max 50 chars, must contain `@`) |
+| `phone` | text nullable | Indian mobile number (10 digits, optionally with +91 prefix) |
 | `is_onboarded` | bool DEFAULT false | True after name + username set |
 | `created_at` | timestamptz | — |
 | `updated_at` | timestamptz | — |
@@ -275,6 +276,8 @@ Schema implemented in `src/lib/db/schema.ts` (Drizzle ORM / Neon PostgreSQL).
 | `owner_id` | uuid FK → users.id CASCADE | The app user who added this contact |
 | `name` | text NOT NULL | Display name (1–60 chars) |
 | `phone` | text nullable | From device Contact Picker |
+| `upi_id` | text nullable | UPI payment address (max 50 chars, must contain `@`) |
+| `email` | text nullable | Email address for the guest |
 | `created_at` | timestamptz | — |
 
 Guests are reusable across expenses. Deleting the owner cascades to all their guest contacts.
@@ -627,3 +630,5 @@ _Not yet configured._
 | 2026-05-28 | Phase 2 — richer expense model (title/notes/splitMode/category/rawValue), 6 split modes, guest payer support, upiId on users; new tables: expense_comments, user_categories; 10 new/updated API routes; /expenses, /expenses/[id], /friends/[username], /contacts/[guestId] pages; two-step group create with member picker; UPI deep link in settle up; Expenses tab added to nav |
 | 2026-05-29 | Phase 3 fixes and features — non-friend user search in expense form (auto-befriends on save), direct settle-up on friend profile (POST /api/settlements, balance updated with direct settlements), guest CRUD (PATCH/DELETE /api/guest-contacts/[id], Saved Guests section in account page), flex-wrap category/group chips, money coloring on expenses list, friends profile navigation links |
 | 2026-05-29 | Round 4 — clickable rows on dashboard/activity/group detail; settle button on expense detail; settled-expense archive section; emoji profile picture picker (avatarUrl reused as emoji store); fixed activity feed "someone"/"undefined" (actorName + fromName/toName in all writeActivity calls); friends list balance refresh after settle via custom DOM event |
+| 2026-05-29 | Round 5 — group activity feed on group detail page; phone on user profiles (Indian mobile validation); upiId + email on guest profiles; name-contains search alongside username-prefix search; guest profile settle up (guestId branch in POST /api/settlements); shared activity utilities extracted to src/lib/activity-utils.ts |
+| 2026-05-29 | Round 6 bug fixes — non-friend group members viewable via /friends/[username] (limited profile, no settle/expenses); 1-year sessions (was 30 days); expense edit 400 fixed (Split.participantId added, editInitial now sends actual participant UUIDs); split breakdown rows clickable (Link to /friends/[username] or /contacts/[guestId]); balances API now includes settlements for both user and guest balances |

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { eq, and, inArray, desc } from "drizzle-orm";
+import { eq, and, or, inArray, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { guestContacts, expenses, expenseSplits } from "@/lib/db/schema";
+import { guestContacts, expenses, expenseSplits, settlements } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
 
 export async function GET(
@@ -23,7 +23,7 @@ export async function GET(
     }
 
     const [guest] = await db
-      .select({ id: guestContacts.id, name: guestContacts.name, phone: guestContacts.phone, ownerId: guestContacts.ownerId })
+      .select({ id: guestContacts.id, name: guestContacts.name, phone: guestContacts.phone, upiId: guestContacts.upiId, email: guestContacts.email, ownerId: guestContacts.ownerId })
       .from(guestContacts)
       .where(and(eq(guestContacts.id, guestId), eq(guestContacts.ownerId, me)))
       .limit(1);
@@ -62,6 +62,22 @@ export async function GET(
 
       for (const r of iPaidGuestOwes) balance += r.amount;
       for (const r of guestPaidIOwes) balance -= r.amount;
+    }
+
+    // Adjust balance for settlements
+    const guestSettlements = await db
+      .select({ fromUserId: settlements.fromUserId, fromGuestId: settlements.fromGuestId, amount: settlements.amount })
+      .from(settlements)
+      .where(
+        or(
+          and(eq(settlements.fromUserId, me), eq(settlements.toGuestId, guestId)),
+          and(eq(settlements.fromGuestId, guestId), eq(settlements.toUserId, me))
+        )
+      );
+
+    for (const s of guestSettlements) {
+      if (s.fromUserId === me) balance += s.amount ?? 0;  // I paid guest → my debt decreases
+      else balance -= s.amount ?? 0;                      // guest paid me → their debt decreases
     }
 
     // Shared expenses (paginated)
@@ -114,7 +130,7 @@ export async function GET(
     }
 
     return NextResponse.json({
-      guest: { id: guest.id, name: guest.name, phone: guest.phone },
+      guest: { id: guest.id, name: guest.name, phone: guest.phone, upiId: guest.upiId, email: guest.email },
       balance,
       expenses: sharedExpenses,
       nextCursor,

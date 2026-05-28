@@ -8,6 +8,7 @@ export const users = pgTable("users", {
   username: text("username").unique(),
   avatarUrl: text("avatar_url"),
   upiId: text("upi_id"),
+  phone: text("phone"),
   isOnboarded: boolean("is_onboarded").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -58,6 +59,8 @@ export const guestContacts = pgTable("guest_contacts", {
     .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   phone: text("phone"),
+  upiId: text("upi_id"),
+  email: text("email"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

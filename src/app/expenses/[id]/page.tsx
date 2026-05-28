@@ -43,6 +43,7 @@ function initials(name: string | null, username: string | null | undefined): str
 type Split = {
   type: "user" | "guest";
   id: string;
+  participantId: string;
   name: string | null;
   username?: string | null;
   amount: number;
@@ -202,7 +203,7 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
 
   const isCreator = expense.createdById === currentUser?.id;
   const cat = categoryDisplay(expense.category);
-  const mySplit = currentUser ? expense.splits.find((s) => s.type === "user" && s.id === currentUser.id) : undefined;
+  const mySplit = currentUser ? expense.splits.find((s) => s.type === "user" && s.participantId === currentUser.id) : undefined;
   const canSettle = !expense.groupId && mySplit?.settlementStatus === "pending" && expense.paidBy.type === "user" && expense.paidBy.id !== currentUser?.id;
 
   const editInitial = isCreator && currentUser ? {
@@ -214,7 +215,7 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
     category: expense.category,
     splitMode: expense.splitMode,
     paidBy: expense.paidBy,
-    splits: expense.splits.map((s) => ({ type: s.type, id: s.id, name: s.name, username: s.username, rawValue: s.rawValue })),
+    splits: expense.splits.map((s) => ({ type: s.type, id: s.participantId, name: s.name, username: s.username, rawValue: s.rawValue })),
   } : undefined;
 
   return (
@@ -295,31 +296,48 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
         <section>
           <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1 pb-1">Split breakdown</p>
           <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
-            {expense.splits.map((split, i) => (
-              <div key={`${split.type}-${split.id}`} className={cn("flex items-center gap-3 px-4 py-3.5", i > 0 && "border-t border-black/[0.06]")}>
-                <Avatar className="h-8 w-8 shrink-0">
-                  <AvatarFallback className={cn("text-[11px] font-medium", split.type === "user" ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-200 text-zinc-600")}>
-                    {initials(split.name, split.username)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-light truncate">
-                    {split.type === "user" && split.id === currentUser?.id ? "You" : (split.name ?? split.username ?? "Guest")}
-                  </p>
-                  {split.username && split.id !== currentUser?.id && <p className="text-[12px] text-muted-foreground">@{split.username}</p>}
-                </div>
-                <p className="text-[14px] font-light tabular-nums shrink-0 mr-2">₹{formatPaise(split.amount)}</p>
-                {split.settlementStatus === "self" ? null : split.settlementStatus === "settled" ? (
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium shrink-0">
-                    <Check className="h-3 w-3" strokeWidth={2.5} /> Settled
+            {expense.splits.map((split, i) => {
+              const isSelf = split.type === "user" && split.participantId === currentUser?.id;
+              const href = isSelf ? null
+                : split.type === "user" && split.username ? `/friends/${split.username}`
+                : split.type === "guest" ? `/contacts/${split.participantId}`
+                : null;
+              const rowClass = cn(
+                "flex items-center gap-3 px-4 py-3.5",
+                i > 0 && "border-t border-black/[0.06]",
+                href && "hover:bg-black/[0.02] transition-colors duration-150"
+              );
+              const rowContent = (
+                <>
+                  <Avatar className="h-8 w-8 shrink-0">
+                    <AvatarFallback className={cn("text-[11px] font-medium", split.type === "user" ? "bg-emerald-500/15 text-emerald-700" : "bg-zinc-200 text-zinc-600")}>
+                      {initials(split.name, split.username)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-light truncate">
+                      {isSelf ? "You" : (split.name ?? split.username ?? "Guest")}
+                    </p>
+                    {split.username && !isSelf && <p className="text-[12px] text-muted-foreground">@{split.username}</p>}
                   </div>
-                ) : (
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium shrink-0">
-                    <Clock className="h-3 w-3" strokeWidth={2} /> Pending
-                  </div>
-                )}
-              </div>
-            ))}
+                  <p className="text-[14px] font-light tabular-nums shrink-0 mr-2">₹{formatPaise(split.amount)}</p>
+                  {split.settlementStatus === "self" ? null : split.settlementStatus === "settled" ? (
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium shrink-0">
+                      <Check className="h-3 w-3" strokeWidth={2.5} /> Settled
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium shrink-0">
+                      <Clock className="h-3 w-3" strokeWidth={2} /> Pending
+                    </div>
+                  )}
+                </>
+              );
+              return href ? (
+                <Link key={`${split.type}-${split.id}`} href={href} className={rowClass}>{rowContent}</Link>
+              ) : (
+                <div key={`${split.type}-${split.id}`} className={rowClass}>{rowContent}</div>
+              );
+            })}
           </div>
         </section>
 

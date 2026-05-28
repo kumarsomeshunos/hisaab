@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
         name: user.name,
         username: user.username,
         avatarUrl: user.avatarUrl,
+        phone: user.phone,
         isOnboarded: user.isOnboarded,
       },
     });

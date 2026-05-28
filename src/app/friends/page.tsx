@@ -181,7 +181,7 @@ export default function FriendsPage() {
               <Input
                 ref={searchInputRef}
                 type="text"
-                placeholder="@username or email"
+                placeholder="Name, @username or email"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="h-11 rounded-xl border-black/[0.1] bg-white pl-4 pr-10 text-[15px] font-light placeholder:text-muted-foreground/60 focus-visible:ring-emerald-500/25 focus-visible:border-emerald-400"

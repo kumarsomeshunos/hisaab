@@ -18,6 +18,7 @@ type UserProfile = {
   username: string | null;
   avatarUrl: string | null;
   upiId: string | null;
+  phone: string | null;
 };
 
 const EMOJI_OPTIONS = ["😊","😎","🤑","🙈","🦊","🐼","🐸","🦄","🌸","⭐","🍕","🍦","🎉","✈️","🏖️","⚽","🎵","📚","💼","🏠","🌈","❤️","🔥","💎","🎯"];
@@ -38,16 +39,19 @@ export default function AccountPage() {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [upiId, setUpiId] = useState("");
+  const [phone, setPhone] = useState("");
   const [avatar, setAvatar] = useState<string | null>(null);
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
 
-  const [savedGuests, setSavedGuests] = useState<{ id: string; name: string; phone: string | null }[]>([]);
+  const [savedGuests, setSavedGuests] = useState<{ id: string; name: string; phone: string | null; upiId: string | null; email: string | null }[]>([]);
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
   const [editingGuestName, setEditingGuestName] = useState("");
   const [editingGuestPhone, setEditingGuestPhone] = useState("");
+  const [editingGuestUpiId, setEditingGuestUpiId] = useState("");
+  const [editingGuestEmail, setEditingGuestEmail] = useState("");
   const [savingGuestId, setSavingGuestId] = useState<string | null>(null);
   const [deletingGuestId, setDeletingGuestId] = useState<string | null>(null);
 
@@ -69,6 +73,7 @@ export default function AccountPage() {
     setName(user.name ?? "");
     setUsername(user.username ?? "");
     setUpiId(user.upiId ?? "");
+    setPhone(user.phone ?? "");
     setAvatar(user.avatarUrl);
     setUsernameStatus("unchanged");
     setError(null);
@@ -113,7 +118,7 @@ export default function AccountPage() {
       const res = await fetch("/api/account", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), username: username.toLowerCase(), upiId: upiId.trim(), avatar }),
+        body: JSON.stringify({ name: name.trim(), username: username.toLowerCase(), upiId: upiId.trim(), avatar, phone: phone.trim() || null }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -121,12 +126,12 @@ export default function AccountPage() {
         if (data.error?.toLowerCase().includes("taken")) setUsernameStatus("taken");
         return;
       }
-      setUser((u) => u ? { ...u, name: data.user.name, username: data.user.username, upiId: data.user.upiId ?? null, avatarUrl: data.user.avatar ?? null } : u);
+      setUser((u) => u ? { ...u, name: data.user.name, username: data.user.username, upiId: data.user.upiId ?? null, avatarUrl: data.user.avatar ?? null, phone: data.user.phone ?? null } : u);
       setEditing(false);
     } finally {
       setSaving(false);
     }
-  }, [user, name, username, upiId, avatar]);
+  }, [user, name, username, upiId, avatar, phone]);
 
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
@@ -137,10 +142,12 @@ export default function AccountPage() {
     }
   }, [router]);
 
-  function startEditingGuest(g: { id: string; name: string; phone: string | null }) {
+  function startEditingGuest(g: { id: string; name: string; phone: string | null; upiId: string | null; email: string | null }) {
     setEditingGuestId(g.id);
     setEditingGuestName(g.name);
     setEditingGuestPhone(g.phone ?? "");
+    setEditingGuestUpiId(g.upiId ?? "");
+    setEditingGuestEmail(g.email ?? "");
   }
 
   async function saveGuest(id: string) {
@@ -150,11 +157,11 @@ export default function AccountPage() {
       const res = await fetch(`/api/guest-contacts/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editingGuestName.trim(), phone: editingGuestPhone.trim() || null }),
+        body: JSON.stringify({ name: editingGuestName.trim(), phone: editingGuestPhone.trim() || null, upiId: editingGuestUpiId.trim() || null, email: editingGuestEmail.trim() || null }),
       });
       const data = await res.json();
       if (!res.ok) return;
-      setSavedGuests((prev) => prev.map((g) => g.id === id ? { id, name: data.guest.name, phone: data.guest.phone } : g));
+      setSavedGuests((prev) => prev.map((g) => g.id === id ? { id, name: data.guest.name, phone: data.guest.phone, upiId: data.guest.upiId ?? null, email: data.guest.email ?? null } : g));
       setEditingGuestId(null);
     } finally {
       setSavingGuestId(null);
@@ -342,7 +349,7 @@ export default function AccountPage() {
                 </div>
 
                 {/* UPI ID */}
-                <div className="flex items-center gap-3 px-4 py-3.5">
+                <div className="flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06]">
                   <span className="text-[14px] font-light text-muted-foreground w-20 shrink-0">UPI ID</span>
                   {editing ? (
                     <Input
@@ -358,6 +365,26 @@ export default function AccountPage() {
                   ) : (
                     <span className="flex-1 text-[15px] font-light">
                       {user.upiId ?? <span className="text-muted-foreground">—</span>}
+                    </span>
+                  )}
+                  {!editing && <ChevronRight className="h-4 w-4 text-muted-foreground/40 shrink-0" />}
+                </div>
+
+                {/* Phone */}
+                <div className="flex items-center gap-3 px-4 py-3.5">
+                  <span className="text-[14px] font-light text-muted-foreground w-20 shrink-0">Phone</span>
+                  {editing ? (
+                    <Input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+91 or 10-digit mobile"
+                      maxLength={14}
+                      className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                  ) : (
+                    <span className="flex-1 text-[15px] font-light">
+                      {user.phone ?? <span className="text-muted-foreground">—</span>}
                     </span>
                   )}
                   {!editing && <ChevronRight className="h-4 w-4 text-muted-foreground/40 shrink-0" />}
@@ -391,6 +418,22 @@ export default function AccountPage() {
                             placeholder="Phone (optional)"
                             className="h-8 flex-1 border-0 bg-transparent p-0 text-[14px] font-light text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
                           />
+                          <Input
+                            value={editingGuestUpiId}
+                            onChange={(e) => setEditingGuestUpiId(e.target.value)}
+                            placeholder="UPI ID (optional)"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            className="h-8 flex-1 border-0 bg-transparent p-0 text-[14px] font-light text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                          <Input
+                            value={editingGuestEmail}
+                            onChange={(e) => setEditingGuestEmail(e.target.value)}
+                            placeholder="Email (optional)"
+                            type="email"
+                            autoCapitalize="none"
+                            className="h-8 flex-1 border-0 bg-transparent p-0 text-[14px] font-light text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
                           <div className="flex gap-3 pt-1">
                             <button
                               onClick={() => setEditingGuestId(null)}
@@ -412,6 +455,8 @@ export default function AccountPage() {
                           <div className="flex-1 min-w-0">
                             <p className="text-[15px] font-light truncate">{g.name}</p>
                             {g.phone && <p className="text-[13px] text-muted-foreground font-light">{g.phone}</p>}
+                            {g.upiId && <p className="text-[12px] text-muted-foreground font-light truncate">{g.upiId}</p>}
+                            {g.email && <p className="text-[12px] text-muted-foreground font-light truncate">{g.email}</p>}
                           </div>
                           <button
                             onClick={() => startEditingGuest(g)}

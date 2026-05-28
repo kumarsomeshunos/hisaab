@@ -20,6 +20,11 @@ const schema = z.object({
     .refine((v) => v === "" || v.includes("@"), { message: "UPI ID must contain @." })
     .optional(),
   avatar: z.string().max(4).nullable().optional(),
+  phone: z
+    .string()
+    .regex(/^(\+91)?[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number.")
+    .optional()
+    .nullable(),
 });
 
 export async function PATCH(request: NextRequest) {
@@ -40,7 +45,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { name, username, upiId, avatar } = parsed.data;
+    const { name, username, upiId, avatar, phone } = parsed.data;
 
     // Username uniqueness — exclude current user so they can keep their own
     const taken = await db
@@ -55,6 +60,7 @@ export async function PATCH(request: NextRequest) {
 
     const resolvedUpiId = upiId === "" ? null : (upiId ?? undefined);
     const resolvedAvatar = avatar === undefined ? undefined : (avatar ?? null);
+    const resolvedPhone = phone === "" ? null : (phone ?? undefined);
 
     await db
       .update(users)
@@ -63,11 +69,12 @@ export async function PATCH(request: NextRequest) {
         username,
         ...(resolvedUpiId !== undefined ? { upiId: resolvedUpiId } : {}),
         ...(resolvedAvatar !== undefined ? { avatarUrl: resolvedAvatar } : {}),
+        ...(resolvedPhone !== undefined ? { phone: resolvedPhone } : {}),
         updatedAt: new Date(),
       })
       .where(eq(users.id, user.id));
 
-    return NextResponse.json({ success: true, user: { name, username, upiId: resolvedUpiId ?? null, avatar: resolvedAvatar ?? null } });
+    return NextResponse.json({ success: true, user: { name, username, upiId: resolvedUpiId ?? null, avatar: resolvedAvatar ?? null, phone: resolvedPhone ?? null } });
   } catch (err) {
     console.error("[account/PATCH] Unexpected error:", err);
     return NextResponse.json({ error: "Something went wrong." }, { status: 500 });

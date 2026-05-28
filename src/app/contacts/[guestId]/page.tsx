@@ -4,14 +4,15 @@ import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ArrowLeft, Loader2, Receipt } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, ExternalLink, Loader2, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function formatPaise(paise: number): string {
   return (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-type GuestProfile = { id: string; name: string; phone: string | null };
+type GuestProfile = { id: string; name: string; phone: string | null; upiId: string | null; email: string | null };
 
 type SharedExpense = {
   id: string;
@@ -19,7 +20,6 @@ type SharedExpense = {
   amount: number;
   date: string;
   myShare: number;
-  isMine: boolean;
 };
 
 export default function ContactProfilePage({ params }: { params: Promise<{ guestId: string }> }) {
@@ -32,6 +32,11 @@ export default function ContactProfilePage({ params }: { params: Promise<{ guest
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [notFound, setNotFound] = useState(false);
+
+  const [settleOpen, setSettleOpen] = useState(false);
+  const [settleAmountStr, setSettleAmountStr] = useState("");
+  const [settleNote, setSettleNote] = useState("");
+  const [settling, setSettling] = useState(false);
 
   useEffect(() => {
     fetch(`/api/contacts/${encodeURIComponent(guestId)}`)
@@ -60,6 +65,29 @@ export default function ContactProfilePage({ params }: { params: Promise<{ guest
     }
   }, [nextCursor, loadingMore, guestId]);
 
+  const handleSettle = useCallback(async () => {
+    const amount = parseFloat(settleAmountStr);
+    if (isNaN(amount) || amount <= 0 || !guest) return;
+    setSettling(true);
+    try {
+      const direction = balance < 0 ? "i_paid" : "they_paid";
+      const res = await fetch("/api/settlements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guestId: guest.id, amount, direction, note: settleNote.trim() || undefined }),
+      });
+      if (!res.ok) return;
+      const paise = Math.round(amount * 100);
+      setBalance((b) => direction === "i_paid" ? b + paise : b - paise);
+      window.dispatchEvent(new CustomEvent("settlement-recorded"));
+      setSettleOpen(false);
+      setSettleAmountStr("");
+      setSettleNote("");
+    } finally {
+      setSettling(false);
+    }
+  }, [settleAmountStr, settleNote, balance, guest]);
+
   if (loading) {
     return (
       <AppShell>
@@ -80,6 +108,8 @@ export default function ContactProfilePage({ params }: { params: Promise<{ guest
       </AppShell>
     );
   }
+
+  const upiAmount = (Math.abs(balance) / 100).toFixed(2);
 
   return (
     <AppShell>
@@ -111,6 +141,25 @@ export default function ContactProfilePage({ params }: { params: Promise<{ guest
             )}
             <span className="mt-1 inline-block text-[11px] font-medium uppercase tracking-wide text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-md">Guest</span>
           </div>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {guest.upiId && (
+              <a
+                href={`upi://pay?pa=${encodeURIComponent(guest.upiId)}&pn=${encodeURIComponent(guest.name)}&am=${upiAmount}&cu=INR`}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-emerald-50 text-emerald-700 text-[13px] font-light hover:bg-emerald-100 transition-colors duration-150"
+              >
+                <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.5} />
+                Pay via UPI
+              </a>
+            )}
+            {guest.email && (
+              <a
+                href={`mailto:${guest.email}`}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-50 text-zinc-700 text-[13px] font-light hover:bg-zinc-100 transition-colors duration-150"
+              >
+                {guest.email}
+              </a>
+            )}
+          </div>
         </div>
 
         {/* Balance tile */}
@@ -133,6 +182,60 @@ export default function ContactProfilePage({ params }: { params: Promise<{ guest
               : `You owe ${guest.name}`}
           </p>
         </div>
+
+        {/* Settle Up */}
+        {balance !== 0 && (
+          settleOpen ? (
+            <div className="rounded-2xl border border-black/[0.06] bg-card px-5 py-4 space-y-3">
+              <p className="text-[13px] font-light text-muted-foreground text-center">
+                {balance < 0
+                  ? `Recording that you paid ${guest.name}`
+                  : `Recording that ${guest.name} paid you`}
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-[15px] font-light text-muted-foreground shrink-0">₹</span>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  value={settleAmountStr}
+                  onChange={(e) => setSettleAmountStr(e.target.value)}
+                  placeholder={(Math.abs(balance) / 100).toFixed(2)}
+                  className="h-9 flex-1 text-[15px] font-light rounded-xl border-black/[0.1]"
+                />
+              </div>
+              <Input
+                type="text"
+                placeholder="Note (optional)"
+                value={settleNote}
+                onChange={(e) => setSettleNote(e.target.value)}
+                maxLength={200}
+                className="h-9 text-[14px] font-light rounded-xl border-black/[0.1]"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSettleOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl text-[13px] font-light text-muted-foreground hover:text-foreground border border-black/[0.06] transition-colors duration-150"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSettle}
+                  disabled={settling || !settleAmountStr || parseFloat(settleAmountStr) <= 0}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-white text-[13px] font-medium hover:bg-emerald-600 disabled:opacity-40 transition-colors duration-150 flex items-center justify-center"
+                >
+                  {settling ? <Loader2 className="h-4 w-4 animate-spin" /> : "Record"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setSettleOpen(true); setSettleAmountStr((Math.abs(balance) / 100).toFixed(2)); }}
+              className="w-full py-3 rounded-2xl border border-emerald-200 text-emerald-700 text-[14px] font-light hover:bg-emerald-50 transition-colors duration-150"
+            >
+              Settle Up
+            </button>
+          )
+        )}
 
         {/* Shared expenses */}
         <section>
@@ -158,8 +261,6 @@ export default function ContactProfilePage({ params }: { params: Promise<{ guest
                   <div className="flex-1 min-w-0">
                     <p className="text-[14px] font-light truncate">{e.title}</p>
                     <p className="text-[12px] font-light text-muted-foreground">
-                      {e.isMine ? "You paid" : `${guest.name} paid`}
-                      {" · "}
                       {new Date(e.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                     </p>
                   </div>
