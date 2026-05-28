@@ -51,7 +51,7 @@ export const friendships = pgTable(
   ]
 );
 
-// People who don't have a Hisaab account, added by an app user
+// People who don't have a Dutch account, added by an app user
 export const guestContacts = pgTable("guest_contacts", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   ownerId: uuid("owner_id")
@@ -201,6 +201,20 @@ export const expenseComments = pgTable("expense_comments", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const expenseMedia = pgTable("expense_media", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  expenseId: uuid("expense_id")
+    .notNull()
+    .references(() => expenses.id, { onDelete: "cascade" }),
+  uploadedById: uuid("uploaded_by_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  key: text("key").notNull().unique(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type OtpCode = typeof otpCodes.$inferSelect;
@@ -214,3 +228,4 @@ export type UserCategory = typeof userCategories.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type ExpenseSplit = typeof expenseSplits.$inferSelect;
 export type ExpenseComment = typeof expenseComments.$inferSelect;
+export type ExpenseMedia = typeof expenseMedia.$inferSelect;

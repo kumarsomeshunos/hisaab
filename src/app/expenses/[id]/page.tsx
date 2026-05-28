@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, use } from "react";
+import { useState, useEffect, useCallback, useRef, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Loader2, Receipt, Trash2, Check, Clock, Send, X, Pencil } from "lucide-react";
+import { ArrowLeft, Loader2, Receipt, Trash2, Check, Clock, Send, X, Pencil, FileText, ChevronLeft, ChevronRight, Paperclip, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { AddExpenseSheet } from "@/components/expenses/AddExpenseSheet";
@@ -39,6 +39,16 @@ function initials(name: string | null, username: string | null | undefined): str
   if (username) return username.trim().charAt(0).toUpperCase();
   return "?";
 }
+
+type MediaItem = {
+  id: string;
+  uploadedById: string;
+  key: string;
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+};
 
 type Split = {
   type: "user" | "guest";
@@ -74,7 +84,11 @@ type ExpenseDetail = {
   paidBy: { type: "user" | "guest"; id: string; name: string | null; username?: string | null };
   splits: Split[];
   comments: Comment[];
+  media: MediaItem[];
 };
+
+const MAX_ATTACHMENTS = 5;
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf"];
 
 export default function ExpenseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: expenseId } = use(params);
@@ -95,6 +109,12 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
   const [settleNote, setSettleNote] = useState("");
   const [settling, setSettling] = useState(false);
 
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((d) => {
       if (d.user) setCurrentUser({ id: d.user.id, name: d.user.name ?? null, username: d.user.username ?? null });
@@ -113,6 +133,14 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
   }, [expenseId]);
 
   useEffect(() => { fetchExpense(); }, [fetchExpense]);
+
+  // Close lightbox on Escape
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setLightboxIndex(null); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [lightboxIndex]);
 
   const handleDelete = useCallback(async () => {
     if (deleting) return;
@@ -180,6 +208,71 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
     }
   }, [settleNote]);
 
+  const uploadFiles = useCallback(async (files: FileList) => {
+    setUploadError(null);
+    const fileArr = Array.from(files).filter((f) => ALLOWED_TYPES.includes(f.type));
+    if (fileArr.length === 0) {
+      setUploadError("Only JPEG, PNG, WEBP, HEIC, and PDF files are allowed.");
+      return;
+    }
+    const currentCount = expense?.media.length ?? 0;
+    if (currentCount + fileArr.length > MAX_ATTACHMENTS) {
+      setUploadError(`Maximum ${MAX_ATTACHMENTS} attachments per expense.`);
+      return;
+    }
+    setUploading(true);
+    try {
+      for (const file of fileArr) {
+        const presignRes = await fetch(`/api/expenses/${expenseId}/media/presign`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name, mimeType: file.type, sizeBytes: file.size }),
+        });
+        if (!presignRes.ok) {
+          const err = await presignRes.json();
+          setUploadError(err.error ?? "Upload failed.");
+          return;
+        }
+        const { uploadUrl, key } = await presignRes.json();
+
+        const putRes = await fetch(uploadUrl, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type },
+        });
+        if (!putRes.ok) {
+          setUploadError("Failed to upload file to storage.");
+          return;
+        }
+
+        const confirmRes = await fetch(`/api/expenses/${expenseId}/media`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, mimeType: file.type, sizeBytes: file.size }),
+        });
+        if (!confirmRes.ok) {
+          const err = await confirmRes.json();
+          setUploadError(err.error ?? "Failed to save attachment.");
+          return;
+        }
+      }
+      fetchExpense();
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [expense?.media.length, expenseId, fetchExpense]);
+
+  const deleteMedia = useCallback(async (mediaId: string) => {
+    setDeletingMediaId(mediaId);
+    try {
+      await fetch(`/api/expenses/${expenseId}/media/${mediaId}`, { method: "DELETE" });
+      fetchExpense();
+    } finally {
+      setDeletingMediaId(null);
+    }
+  }, [expenseId, fetchExpense]);
+
   if (loading) {
     return (
       <AppShell>
@@ -202,9 +295,14 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
   }
 
   const isCreator = expense.createdById === currentUser?.id;
+  const isParticipant = expense.splits.some((s) => s.type === "user" && s.participantId === currentUser?.id);
+  const canUpload = (isParticipant || isCreator) && expense.media.length < MAX_ATTACHMENTS && !uploading;
   const cat = categoryDisplay(expense.category);
   const mySplit = currentUser ? expense.splits.find((s) => s.type === "user" && s.participantId === currentUser.id) : undefined;
   const canSettle = !expense.groupId && mySplit?.settlementStatus === "pending" && expense.paidBy.type === "user" && expense.paidBy.id !== currentUser?.id;
+
+  const imageItems = expense.media.filter((m) => m.mimeType !== "application/pdf");
+  const pdfItems = expense.media.filter((m) => m.mimeType === "application/pdf");
 
   const editInitial = isCreator && currentUser ? {
     id: expense.id,
@@ -255,6 +353,91 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
             {cat && <p className="text-[12px] font-light text-muted-foreground mt-0.5">{cat.name}</p>}
           </div>
         </div>
+
+        {/* Attachments */}
+        {(expense.media.length > 0 || canUpload) && (
+          <section>
+            <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1 pb-1">Attachments</p>
+            <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
+              {expense.media.length > 0 && (
+                <div className="p-3 space-y-3">
+                  {/* Image grid */}
+                  {imageItems.length > 0 && (
+                    <div className={cn("grid gap-2", imageItems.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
+                      {imageItems.map((item) => {
+                        const idx = imageItems.indexOf(item);
+                        return (
+                          <div key={item.id} className="relative group aspect-square rounded-xl overflow-hidden bg-muted">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={item.url}
+                              alt=""
+                              className="w-full h-full object-cover cursor-pointer"
+                              onClick={() => setLightboxIndex(idx)}
+                            />
+                            {item.uploadedById === currentUser?.id && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); deleteMedia(item.id); }}
+                                disabled={deletingMediaId === item.id}
+                                className="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 disabled:opacity-60"
+                              >
+                                {deletingMediaId === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" strokeWidth={2} />}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* PDF list */}
+                  {pdfItems.map((item) => (
+                    <div key={item.id} className="flex items-center gap-3 px-1 py-0.5">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 shrink-0">
+                        <FileText className="h-4 w-4 text-rose-500" strokeWidth={1.5} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-light truncate">{item.key.split("/").pop()}</p>
+                        <p className="text-[11px] text-muted-foreground">{(item.sizeBytes / 1024).toFixed(0)} KB</p>
+                      </div>
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/[0.05] transition-colors duration-150 shrink-0"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </a>
+                      {item.uploadedById === currentUser?.id && (
+                        <button
+                          onClick={() => deleteMedia(item.id)}
+                          disabled={deletingMediaId === item.id}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors duration-150 shrink-0 disabled:opacity-40"
+                        >
+                          {deletingMediaId === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3.5 w-3.5" strokeWidth={2} />}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {canUpload && (
+                <div className={cn("px-4 py-3", expense.media.length > 0 && "border-t border-black/[0.06]")}>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex items-center gap-2 text-[13px] font-light text-emerald-600 hover:text-emerald-700 disabled:opacity-40 transition-colors duration-150"
+                  >
+                    {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" strokeWidth={1.5} />}
+                    {uploading ? "Uploading…" : "Add photo or receipt"}
+                  </button>
+                  {uploadError && (
+                    <p className="mt-1 text-[12px] font-light text-rose-500">{uploadError}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Meta card */}
         <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
@@ -469,6 +652,59 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
         )}
       </div>
 
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,.pdf"
+        multiple
+        className="hidden"
+        onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); }}
+      />
+
+      {/* Lightbox */}
+      {lightboxIndex !== null && imageItems.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+          onClick={() => setLightboxIndex(null)}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightboxIndex(null); }}
+            className="absolute top-4 right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors duration-150"
+          >
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+          {imageItems.length > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); setLightboxIndex((lightboxIndex - 1 + imageItems.length) % imageItems.length); }}
+                className="absolute left-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors duration-150"
+              >
+                <ChevronLeft className="h-5 w-5" strokeWidth={1.5} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setLightboxIndex((lightboxIndex + 1) % imageItems.length); }}
+                className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors duration-150"
+              >
+                <ChevronRight className="h-5 w-5" strokeWidth={1.5} />
+              </button>
+            </>
+          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageItems[lightboxIndex].url}
+            alt=""
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded-xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {imageItems.length > 1 && (
+            <p className="absolute bottom-4 text-white/60 text-[13px] font-light">
+              {lightboxIndex + 1} / {imageItems.length}
+            </p>
+          )}
+        </div>
+      )}
+
       {editOpen && currentUser && editInitial && (
         <AddExpenseSheet
           currentUser={currentUser}
@@ -480,4 +716,3 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
     </AppShell>
   );
 }
-

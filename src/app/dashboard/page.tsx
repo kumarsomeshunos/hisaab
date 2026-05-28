@@ -110,7 +110,7 @@ export default function DashboardPage() {
     <AppShell>
       <header className="sticky top-0 z-40 glass border-b border-black/[0.06]">
         <div className="flex h-14 items-center justify-between px-5 md:px-6">
-          <h1 className="text-[17px] font-light tracking-[-0.02em] md:hidden">Hisaab</h1>
+          <h1 className="text-[17px] font-light tracking-[-0.02em] md:hidden">Dutch</h1>
           <h1 className="hidden md:block text-[15px] font-medium tracking-[-0.01em] text-foreground">Overview</h1>
           <Link href="/account">
             <Avatar className="h-8 w-8 cursor-pointer ring-[1.5px] ring-black/10">

@@ -34,7 +34,7 @@ export function Sidebar() {
           <IndianRupee className="h-4 w-4 text-white" strokeWidth={2} />
         </div>
         <span className="text-[17px] font-light tracking-[-0.02em] text-foreground">
-          Hisaab
+          Dutch
         </span>
       </div>
 

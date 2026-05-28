@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { eq, and, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, expenses, expenseSplits, guestContacts, groups, settlements, expenseComments, friendships, groupMembers } from "@/lib/db/schema";
+import { users, expenses, expenseSplits, guestContacts, groups, settlements, expenseComments, friendships, groupMembers, expenseMedia } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { writeActivity } from "@/lib/activity";
+import { R2_PUBLIC_URL } from "@/lib/r2";
 
 // ---------- Shared split helper (duplicated from route.ts to avoid a shared import cycle) ----------
 
@@ -278,6 +279,20 @@ export async function GET(
       .where(eq(expenseComments.expenseId, id))
       .orderBy(expenseComments.createdAt);
 
+    // Fetch media attachments
+    const mediaRows = await db
+      .select({
+        id: expenseMedia.id,
+        uploadedById: expenseMedia.uploadedById,
+        key: expenseMedia.key,
+        mimeType: expenseMedia.mimeType,
+        sizeBytes: expenseMedia.sizeBytes,
+        uploadedAt: expenseMedia.uploadedAt,
+      })
+      .from(expenseMedia)
+      .where(eq(expenseMedia.expenseId, id))
+      .orderBy(expenseMedia.uploadedAt);
+
     return NextResponse.json({
       expense: {
         id: expense.id,
@@ -301,6 +316,15 @@ export async function GET(
           userUsername: c.userUsername,
           body: c.body,
           createdAt: c.createdAt,
+        })),
+        media: mediaRows.map((m) => ({
+          id: m.id,
+          uploadedById: m.uploadedById,
+          key: m.key,
+          url: `${R2_PUBLIC_URL}/${m.key}`,
+          mimeType: m.mimeType,
+          sizeBytes: m.sizeBytes,
+          uploadedAt: m.uploadedAt,
         })),
       },
     });

@@ -1,6 +1,6 @@
 {
-  "name": "Hisaab",
-  "short_name": "Hisaab",
+  "name": "Dutch",
+  "short_name": "Dutch",
   "description": "Split expenses with friends and groups — simple, fast, fair.",
   "start_url": "/dashboard",
   "display": "standalone",

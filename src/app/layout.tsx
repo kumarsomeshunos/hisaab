@@ -10,13 +10,13 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Hisaab",
+  title: "Dutch",
   description: "Split expenses with friends and groups — simple, fast, fair.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Hisaab",
+    title: "Dutch",
   },
 };
 

@@ -1,4 +1,4 @@
-# ARCHITECTURE.md — Hisaab
+# ARCHITECTURE.md — Dutch (codename: hisaab)
 
 > **This file is maintained automatically by the AI. Do not edit manually unless correcting an error. Updated at the end of every session that changes structure, dependencies, routes, data models, or environment variables.**
 
@@ -6,13 +6,13 @@
 
 ## Project Description
 
-Hisaab is a Splitwise-like expense-splitting Progressive Web App for groups of friends and flatmates. Users can create groups, add shared expenses, track who owes whom, and record settlements. The app is installable on Android, iOS, and desktop via PWA — avoiding native app store distribution while delivering a native-app feel.
+Dutch is a Splitwise-like expense-splitting Progressive Web App for groups of friends and flatmates. Users can create groups, add shared expenses, track who owes whom, and record settlements. The app is installable on Android, iOS, and desktop via PWA — avoiding native app store distribution while delivering a native-app feel.
 
 ---
 
 ## Project
 
-- **Name:** Hisaab
+- **Name:** Dutch (codename: hisaab)
 - **Type:** Progressive Web App (single Next.js application)
 - **Purpose:** Track and settle shared expenses among friends and groups
 - **Target Users:** Small groups (friends, flatmates, travel companions) splitting costs informally, primarily in India
@@ -59,6 +59,8 @@ Hisaab is a Splitwise-like expense-splitting Progressive Web App for groups of f
 | @neondatabase/serverless | Neon Postgres driver — works in Edge runtime | 2026-05-28 |
 | resend | Transactional email (OTP delivery) | 2026-05-28 |
 | zod | Input validation at every API boundary | 2026-05-28 |
+| @aws-sdk/client-s3 | S3-compatible client for Cloudflare R2 media uploads | 2026-05-29 |
+| @aws-sdk/s3-request-presigner | Presigned URL generation for browser-direct R2 uploads | 2026-05-29 |
 
 ---
 
@@ -107,9 +109,13 @@ hisaab/
 │   │   │   │   ├── route.ts                  # GET: filtered paginated list | POST: create with 6 split modes
 │   │   │   │   └── [id]/
 │   │   │   │       ├── route.ts              # GET: detail | PATCH: full edit | DELETE: remove
-│   │   │   │       └── comments/
-│   │   │   │           ├── route.ts          # POST: add comment (participant only)
-│   │   │   │           └── [commentId]/route.ts # DELETE: own comment only
+│   │   │   │       ├── comments/
+│   │   │   │       │   ├── route.ts          # POST: add comment (participant only)
+│   │   │   │       │   └── [commentId]/route.ts # DELETE: own comment only
+│   │   │   │       └── media/
+│   │   │   │           ├── presign/route.ts  # POST: generate presigned PUT URL for R2 upload
+│   │   │   │           ├── route.ts          # POST: confirm upload, insert expense_media row
+│   │   │   │           └── [mediaId]/route.ts # DELETE: delete from R2 + DB (uploader only)
 │   │   │   ├── balances/route.ts             # GET: net balance per friend (paise)
 │   │   │   ├── activity/route.ts             # GET: cursor-paginated activity feed
 │   │   │   ├── account/route.ts              # PATCH: update name + username + upiId
@@ -165,6 +171,7 @@ hisaab/
 │   │   │   └── schema.ts         # All tables — see Data Models section
 │   │   ├── categories.ts         # DEFAULT_CATEGORIES (12 built-ins) + resolveCategory() helper
 │   │   ├── activity.ts           # writeActivity() helper — fire-and-forget; never blocks response
+│   │   ├── r2.ts                 # Cloudflare R2 S3Client, R2_BUCKET, R2_PUBLIC_URL
 │   │   └── utils.ts              # cn() helper for conditional class merging
 │   └── middleware.ts             # Edge middleware — session validation + route guard
 ├── .env.example                  # Documented env vars (no real values)
@@ -180,7 +187,7 @@ hisaab/
 
 ## Architecture Overview
 
-Hisaab is a single Next.js application using the App Router. There is no separate backend process — server-side logic will live in API Routes and Server Actions within the same codebase.
+Dutch is a single Next.js application using the App Router. There is no separate backend process — server-side logic will live in API Routes and Server Actions within the same codebase.
 
 ```
 Browser / PWA shell
@@ -329,6 +336,19 @@ Guests are reusable across expenses. Deleting the owner cascades to all their gu
 | `body` | text NOT NULL | Max 500 chars |
 | `created_at` | timestamptz | — |
 
+### `expense_media`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `expense_id` | uuid FK → expenses.id CASCADE | Deleted when expense is deleted |
+| `uploaded_by_id` | uuid FK → users.id RESTRICT | Uploader — only they can delete |
+| `key` | text UNIQUE NOT NULL | R2 object key: `media/{expenseId}/{uuid}.{ext}` |
+| `mime_type` | text NOT NULL | Allowed: `image/jpeg`, `image/png`, `image/webp`, `image/heic`, `application/pdf` |
+| `size_bytes` | integer NOT NULL | Stored for display; max 10 MB enforced at API layer |
+| `uploaded_at` | timestamptz | — |
+
+**Rules:** Max 5 attachments per expense. Any split participant or creator can upload. Only the uploader can delete. Public URL derived at read time: `${NEXT_PUBLIC_R2_PUBLIC_URL}/${key}` — no URL column stored.
+
 ### `user_categories`
 | Column | Type | Notes |
 |--------|------|-------|
@@ -435,6 +455,9 @@ ActivityLog: id, type, actorId → User, groupId → Group | null, payload JSON,
 | `/api/expenses/[id]` | DELETE | Delete expense + splits (creator only); writes `expense_deleted` activity | Session |
 | `/api/expenses/[id]/comments` | POST | Add comment (participant only, max 500 chars) | Session |
 | `/api/expenses/[id]/comments/[commentId]` | DELETE | Delete own comment | Session |
+| `/api/expenses/[id]/media/presign` | POST | Generate presigned PUT URL for browser-direct R2 upload (participant/creator only) | Session |
+| `/api/expenses/[id]/media` | POST | Confirm upload: HeadObject verify + insert expense_media row | Session |
+| `/api/expenses/[id]/media/[mediaId]` | DELETE | Delete media from R2 and DB (uploader only) | Session |
 | `/api/balances` | GET | Net paise balance per friend (positive = they owe you) | Session |
 | `/api/activity` | GET | Cursor-paginated activity feed (limit 20); visibility filtered | Session |
 | `/api/guest-contacts` | GET | List the current user's saved guest contacts | Session |
@@ -529,6 +552,11 @@ No third-party session library — keeps the auth layer thin, fully transparent,
 | `RESEND_API_KEY` | Resend email sending | Yes | No |
 | `FROM_EMAIL` | Sender address for OTPs (must be verified in Resend) | Yes | No |
 | `NEXT_PUBLIC_APP_URL` | Canonical app URL (no trailing slash) | Yes | Yes |
+| `CLOUDFLARE_R2_ACCOUNT_ID` | Cloudflare account ID for R2 endpoint URL | Yes | No |
+| `CLOUDFLARE_R2_ACCESS_KEY_ID` | R2 API token — Object Read & Write | Yes | No |
+| `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | R2 API secret | Yes | No |
+| `CLOUDFLARE_R2_BUCKET` | R2 bucket name (e.g. `dutch-media`) | Yes | No |
+| `NEXT_PUBLIC_R2_PUBLIC_URL` | R2 public bucket URL (e.g. `https://pub-xxxx.r2.dev`) | Yes | Yes |
 
 > Never commit real values. Use `.env.local` locally (git-ignored). See `.env.example` for the template.
 
@@ -540,6 +568,7 @@ No third-party session library — keeps the auth layer thin, fully transparent,
 | ------- | ------- | ---- | ------------ |
 | Neon | Serverless PostgreSQL database | `DATABASE_URL` connection string | API routes return 500; middleware redirects to /auth |
 | Resend | Transactional email (OTP delivery) | `RESEND_API_KEY` | `/api/auth/otp/send` returns 500 "Failed to send email" |
+| Cloudflare R2 | Media attachments (images + PDFs) for expenses | R2 API token (access key + secret) | Presign/confirm/delete routes return 500 |
 
 ---
 
@@ -607,7 +636,6 @@ _Not yet configured._
 ## Out of Scope (for now)
 
 - [ ] Multi-currency support
-- [ ] Receipt photo uploads
 - [ ] Push notifications
 - [ ] iOS native share sheet integration
 - [ ] Export to CSV / PDF
@@ -632,3 +660,4 @@ _Not yet configured._
 | 2026-05-29 | Round 4 — clickable rows on dashboard/activity/group detail; settle button on expense detail; settled-expense archive section; emoji profile picture picker (avatarUrl reused as emoji store); fixed activity feed "someone"/"undefined" (actorName + fromName/toName in all writeActivity calls); friends list balance refresh after settle via custom DOM event |
 | 2026-05-29 | Round 5 — group activity feed on group detail page; phone on user profiles (Indian mobile validation); upiId + email on guest profiles; name-contains search alongside username-prefix search; guest profile settle up (guestId branch in POST /api/settlements); shared activity utilities extracted to src/lib/activity-utils.ts |
 | 2026-05-29 | Round 6 bug fixes — non-friend group members viewable via /friends/[username] (limited profile, no settle/expenses); 1-year sessions (was 30 days); expense edit 400 fixed (Split.participantId added, editInitial now sends actual participant UUIDs); split breakdown rows clickable (Link to /friends/[username] or /contacts/[guestId]); balances API now includes settlements for both user and guest balances |
+| 2026-05-29 | Rename Hisaab → Dutch (product name, codename stays hisaab); Cloudflare R2 expense media uploads — expense_media table, presign/confirm/delete API routes, image gallery + lightbox + PDF list on expense detail page; @aws-sdk/client-s3 + s3-request-presigner added |

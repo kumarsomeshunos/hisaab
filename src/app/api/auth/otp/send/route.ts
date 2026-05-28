@@ -62,9 +62,9 @@ export async function POST(request: NextRequest) {
     const { Resend } = await import("resend");
     const resend = new Resend(process.env.RESEND_API_KEY);
     const { error: emailError } = await resend.emails.send({
-      from: process.env.FROM_EMAIL ?? "Hisaab <noreply@hisaab.app>",
+      from: process.env.FROM_EMAIL ?? "Dutch <noreply@dutch.app>",
       to: email,
-      subject: `Your Hisaab sign-in code: ${otp}`,
+      subject: `Your Dutch sign-in code: ${otp}`,
       html: buildEmailHtml(otp),
     });
 
@@ -94,12 +94,12 @@ function buildEmailHtml(otp: string): string {
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:40px 16px;">
   <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid rgba(0,0,0,0.06);">
     <div style="background:#10b981;padding:24px 32px;">
-      <p style="color:#ffffff;font-size:20px;font-weight:300;margin:0;letter-spacing:-0.02em;">Hisaab</p>
+      <p style="color:#ffffff;font-size:20px;font-weight:300;margin:0;letter-spacing:-0.02em;">Dutch</p>
     </div>
     <div style="padding:32px;">
       <p style="color:#111;font-size:16px;font-weight:300;margin:0 0 8px 0;">Your sign-in code</p>
       <p style="color:#666;font-size:14px;font-weight:300;margin:0 0 28px 0;line-height:1.6;">
-        Enter this code to sign in to Hisaab. It expires in 10 minutes.
+        Enter this code to sign in to Dutch. It expires in 10 minutes.
       </p>
       <div style="background:#f5f5f5;border-radius:12px;padding:24px;text-align:center;margin-bottom:28px;">
         <p style="font-size:40px;font-weight:200;letter-spacing:0.2em;color:#111;margin:0;">${otp}</p>

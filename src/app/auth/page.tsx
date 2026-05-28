@@ -135,7 +135,7 @@ export default function AuthPage() {
             <IndianRupee className="h-[26px] w-[26px] text-white" strokeWidth={2} />
           </div>
           <h1 className="text-[30px] font-thin tracking-[-0.04em] text-foreground">
-            Hisaab
+            Dutch
           </h1>
         </div>
 
