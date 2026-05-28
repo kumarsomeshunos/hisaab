@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import { enqueueMutation, getAllMutations, clearErrors, type PendingMutation } from "./db";
 import { syncQueue, registerBackgroundSync } from "./sync";
 
@@ -93,10 +92,6 @@ export function useOfflineMutate() {
 
       await registerBackgroundSync();
       await refreshCount();
-
-      toast.info(`Saved offline — syncs when reconnected`, {
-        description: opts.label,
-      });
 
       return { queued: true };
     },
