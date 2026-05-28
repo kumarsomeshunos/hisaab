@@ -30,7 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex flex-1 flex-col min-h-screen">
         {/* Pass refreshKey via a custom event so pages can react */}
-        <main className="flex-1 overflow-y-auto pb-16 md:pb-0" data-refresh={refreshKey}>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden pb-16 md:pb-0" data-refresh={refreshKey}>
           {children}
         </main>
       </div>

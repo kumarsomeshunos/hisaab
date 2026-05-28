@@ -394,8 +394,12 @@ export async function PATCH(
         .from(friendships)
         .where(and(eq(friendships.userId, user.id), inArray(friendships.friendId, otherUserIds)));
       const friendSet = new Set(friendRows.map((r) => r.friendId));
-      if (otherUserIds.some((uid) => !friendSet.has(uid))) {
-        return NextResponse.json({ error: "All app-user participants must be your friends." }, { status: 403 });
+      const toFriend = otherUserIds.filter((uid) => !friendSet.has(uid));
+      if (toFriend.length > 0) {
+        await db.insert(friendships).values([
+          ...toFriend.map((uid) => ({ userId: user.id, friendId: uid })),
+          ...toFriend.map((uid) => ({ userId: uid, friendId: user.id })),
+        ]).onConflictDoNothing();
       }
     }
 

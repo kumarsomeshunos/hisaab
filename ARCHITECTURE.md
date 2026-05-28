@@ -436,6 +436,9 @@ ActivityLog: id, type, actorId → User, groupId → Group | null, payload JSON,
 | `/api/activity` | GET | Cursor-paginated activity feed (limit 20); visibility filtered | Session |
 | `/api/guest-contacts` | GET | List the current user's saved guest contacts | Session |
 | `/api/guest-contacts` | POST | Create a new guest contact (name + optional phone) | Session |
+| `/api/guest-contacts/[id]` | PATCH | Update guest name/phone (owner only) | Session |
+| `/api/guest-contacts/[id]` | DELETE | Delete guest contact (owner only; fails if referenced in expense splits) | Session |
+| `/api/settlements` | POST | Record a direct (non-group) settlement between two friends | Session |
 
 ---
 
@@ -622,3 +625,4 @@ _Not yet configured._
 | 2026-05-28 | Full-screen mobile expense form + guest participants — guest_contacts table, Contact Picker API integration, guest payer support, Non-app debts dashboard section | — expenses + expense_splits tables, POST/GET /api/expenses, DELETE /api/expenses/[id], GET /api/balances, AddExpenseSheet bottom-sheet form (equal + exact splits), global FAB in AppShell, dashboard balance tiles + activity list wired to real data, friends page balances wired |
 | 2026-05-28 | Groups + Activity feed — groups/group_members/settlements/activity_log tables; 9 new API routes (groups CRUD, members, expenses, settlements, activity); /groups, /groups/[id], /activity pages; AddExpenseSheet updated with optional groupId/groupMembers props; dashboard Groups section wired; friend add/remove writes activity |
 | 2026-05-28 | Phase 2 — richer expense model (title/notes/splitMode/category/rawValue), 6 split modes, guest payer support, upiId on users; new tables: expense_comments, user_categories; 10 new/updated API routes; /expenses, /expenses/[id], /friends/[username], /contacts/[guestId] pages; two-step group create with member picker; UPI deep link in settle up; Expenses tab added to nav |
+| 2026-05-29 | Phase 3 fixes and features — non-friend user search in expense form (auto-befriends on save), direct settle-up on friend profile (POST /api/settlements, balance updated with direct settlements), guest CRUD (PATCH/DELETE /api/guest-contacts/[id], Saved Guests section in account page), flex-wrap category/group chips, money coloring on expenses list, friends profile navigation links |

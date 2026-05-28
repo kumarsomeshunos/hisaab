@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
 import { UserPlus, X, Loader2, UserX, Users } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -250,38 +251,64 @@ export default function FriendsPage() {
               {friends.map((friend, i) => {
                 const net = balanceMap.get(friend.id) ?? 0;
                 return (
-                  <div key={friend.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
-                    <Avatar className="h-10 w-10 shrink-0">
-                      <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[14px] font-medium">
-                        {initials(friend.name, friend.username)}
-                      </AvatarFallback>
-                    </Avatar>
-
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[15px] font-light truncate">{friend.name ?? friend.username}</p>
-                      {friend.username && (
-                        <p className="text-[13px] text-muted-foreground font-light">@{friend.username}</p>
-                      )}
-                    </div>
-
-                    {/* Balance */}
-                    <div className="text-right shrink-0">
-                      {net === 0 ? (
-                        <span className="text-[13px] font-light text-muted-foreground">Settled</span>
-                      ) : net > 0 ? (
-                        <div>
-                          <p className="text-[13px] font-light text-emerald-600 tabular-nums">+₹{formatPaise(net)}</p>
-                          <p className="text-[11px] font-light text-muted-foreground">owes you</p>
+                  <div key={friend.id} className={cn("flex items-center px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
+                    {friend.username ? (
+                      <Link
+                        href={`/friends/${friend.username}`}
+                        className="flex flex-1 items-center gap-3 min-w-0"
+                      >
+                        <Avatar className="h-10 w-10 shrink-0">
+                          <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[14px] font-medium">
+                            {initials(friend.name, friend.username)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[15px] font-light truncate">{friend.name ?? friend.username}</p>
+                          <p className="text-[13px] text-muted-foreground font-light">@{friend.username}</p>
                         </div>
-                      ) : (
-                        <div>
-                          <p className="text-[13px] font-light text-rose-500 tabular-nums">-₹{formatPaise(Math.abs(net))}</p>
-                          <p className="text-[11px] font-light text-muted-foreground">you owe</p>
+                        <div className="text-right shrink-0 mr-2">
+                          {net === 0 ? (
+                            <span className="text-[13px] font-light text-muted-foreground">Settled</span>
+                          ) : net > 0 ? (
+                            <div>
+                              <p className="text-[13px] font-light text-emerald-600 tabular-nums">+₹{formatPaise(net)}</p>
+                              <p className="text-[11px] font-light text-muted-foreground">owes you</p>
+                            </div>
+                          ) : (
+                            <div>
+                              <p className="text-[13px] font-light text-rose-500 tabular-nums">-₹{formatPaise(Math.abs(net))}</p>
+                              <p className="text-[11px] font-light text-muted-foreground">you owe</p>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-
-                    {/* Remove menu */}
+                      </Link>
+                    ) : (
+                      <>
+                        <Avatar className="h-10 w-10 shrink-0">
+                          <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[14px] font-medium">
+                            {initials(friend.name, friend.username)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0 ml-3">
+                          <p className="text-[15px] font-light truncate">{friend.name ?? friend.username}</p>
+                        </div>
+                        <div className="text-right shrink-0 mr-2">
+                          {net === 0 ? (
+                            <span className="text-[13px] font-light text-muted-foreground">Settled</span>
+                          ) : net > 0 ? (
+                            <div>
+                              <p className="text-[13px] font-light text-emerald-600 tabular-nums">+₹{formatPaise(net)}</p>
+                              <p className="text-[11px] font-light text-muted-foreground">owes you</p>
+                            </div>
+                          ) : (
+                            <div>
+                              <p className="text-[13px] font-light text-rose-500 tabular-nums">-₹{formatPaise(Math.abs(net))}</p>
+                              <p className="text-[11px] font-light text-muted-foreground">you owe</p>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
                     <div className="relative">
                       <button
                         onClick={() => setOpenMenuId(openMenuId === friend.id ? null : friend.id)}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and, inArray, desc } from "drizzle-orm";
+import { eq, and, inArray, desc, isNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, friendships, expenses, expenseSplits, groups, groupMembers, settlements } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
@@ -134,6 +134,24 @@ export async function GET(
         if (s.fromUserId === me && s.toUserId === target.id) balance += s.amount ?? 0;
         else if (s.fromUserId === target.id && s.toUserId === me) balance -= s.amount ?? 0;
       }
+    }
+
+    // Direct settlements (no group)
+    const directSettlements = await db
+      .select({ fromUserId: settlements.fromUserId, toUserId: settlements.toUserId, amount: settlements.amount })
+      .from(settlements)
+      .where(
+        and(
+          isNull(settlements.groupId),
+          or(
+            and(eq(settlements.fromUserId, me), eq(settlements.toUserId, target.id)),
+            and(eq(settlements.fromUserId, target.id), eq(settlements.toUserId, me)),
+          )
+        )
+      );
+    for (const s of directSettlements) {
+      if (s.fromUserId === me) balance += s.amount ?? 0;
+      else balance -= s.amount ?? 0;
     }
 
     // --- Shared expenses (paginated) ---

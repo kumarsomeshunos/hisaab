@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
 import { ArrowLeft, Loader2, Receipt, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +49,11 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
   const [loadingMore, setLoadingMore] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
+  const [settleOpen, setSettleOpen] = useState(false);
+  const [settleAmountStr, setSettleAmountStr] = useState("");
+  const [settleNote, setSettleNote] = useState("");
+  const [settling, setSettling] = useState(false);
+
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((d) => setCurrentUserId(d.user?.id ?? null)).catch(() => {});
   }, []);
@@ -79,6 +85,28 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
       setLoadingMore(false);
     }
   }, [nextCursor, loadingMore, username, friend]);
+
+  const handleSettle = useCallback(async () => {
+    const amount = parseFloat(settleAmountStr);
+    if (isNaN(amount) || amount <= 0 || !friend) return;
+    setSettling(true);
+    try {
+      const direction = balance < 0 ? "i_paid" : "they_paid";
+      const res = await fetch("/api/settlements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ friendUserId: friend.id, amount, direction, note: settleNote.trim() || undefined }),
+      });
+      if (!res.ok) return;
+      const paise = Math.round(amount * 100);
+      setBalance((b) => direction === "i_paid" ? b + paise : b - paise);
+      setSettleOpen(false);
+      setSettleAmountStr("");
+      setSettleNote("");
+    } finally {
+      setSettling(false);
+    }
+  }, [settleAmountStr, settleNote, balance, friend]);
 
   if (loading) {
     return (
@@ -163,6 +191,60 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
               : `You owe ${friend.name ?? friend.username ?? "them"}`}
           </p>
         </div>
+
+        {/* Settle Up */}
+        {balance !== 0 && (
+          settleOpen ? (
+            <div className="rounded-2xl border border-black/[0.06] bg-card px-5 py-4 space-y-3">
+              <p className="text-[13px] font-light text-muted-foreground text-center">
+                {balance < 0
+                  ? `Recording that you paid ${friend.name ?? friend.username}`
+                  : `Recording that ${friend.name ?? friend.username} paid you`}
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-[15px] font-light text-muted-foreground shrink-0">₹</span>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  value={settleAmountStr}
+                  onChange={(e) => setSettleAmountStr(e.target.value)}
+                  placeholder={(Math.abs(balance) / 100).toFixed(2)}
+                  className="h-9 flex-1 text-[15px] font-light rounded-xl border-black/[0.1]"
+                />
+              </div>
+              <Input
+                type="text"
+                placeholder="Note (optional)"
+                value={settleNote}
+                onChange={(e) => setSettleNote(e.target.value)}
+                maxLength={200}
+                className="h-9 text-[14px] font-light rounded-xl border-black/[0.1]"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSettleOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl text-[13px] font-light text-muted-foreground hover:text-foreground border border-black/[0.06] transition-colors duration-150"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSettle}
+                  disabled={settling || !settleAmountStr || parseFloat(settleAmountStr) <= 0}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-white text-[13px] font-medium hover:bg-emerald-600 disabled:opacity-40 transition-colors duration-150 flex items-center justify-center"
+                >
+                  {settling ? <Loader2 className="h-4 w-4 animate-spin" /> : "Record"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setSettleOpen(true); setSettleAmountStr((Math.abs(balance) / 100).toFixed(2)); }}
+              className="w-full py-3 rounded-2xl border border-emerald-200 text-emerald-700 text-[14px] font-light hover:bg-emerald-50 transition-colors duration-150"
+            >
+              Settle Up
+            </button>
+          )
+        )}
 
         {/* Mutual groups */}
         {mutualGroups.length > 0 && (

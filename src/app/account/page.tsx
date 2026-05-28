@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Check, X, Loader2, LogOut, ChevronRight } from "lucide-react";
+import { Check, X, Loader2, LogOut, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,12 +41,23 @@ export default function AccountPage() {
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
 
+  const [savedGuests, setSavedGuests] = useState<{ id: string; name: string; phone: string | null }[]>([]);
+  const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
+  const [editingGuestName, setEditingGuestName] = useState("");
+  const [editingGuestPhone, setEditingGuestPhone] = useState("");
+  const [savingGuestId, setSavingGuestId] = useState<string | null>(null);
+  const [deletingGuestId, setDeletingGuestId] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((d) => setUser(d.user ?? null))
       .catch(() => {})
       .finally(() => setLoading(false));
+    fetch("/api/guest-contacts")
+      .then((r) => r.json())
+      .then((d) => setSavedGuests(d.guests ?? []))
+      .catch(() => {});
   }, []);
 
   // Enter edit mode — seed inputs from current user
@@ -111,7 +122,7 @@ export default function AccountPage() {
     } finally {
       setSaving(false);
     }
-  }, [user, name, username]);
+  }, [user, name, username, upiId]);
 
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
@@ -121,6 +132,42 @@ export default function AccountPage() {
       router.push("/auth");
     }
   }, [router]);
+
+  function startEditingGuest(g: { id: string; name: string; phone: string | null }) {
+    setEditingGuestId(g.id);
+    setEditingGuestName(g.name);
+    setEditingGuestPhone(g.phone ?? "");
+  }
+
+  async function saveGuest(id: string) {
+    if (!editingGuestName.trim()) return;
+    setSavingGuestId(id);
+    try {
+      const res = await fetch(`/api/guest-contacts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editingGuestName.trim(), phone: editingGuestPhone.trim() || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) return;
+      setSavedGuests((prev) => prev.map((g) => g.id === id ? { id, name: data.guest.name, phone: data.guest.phone } : g));
+      setEditingGuestId(null);
+    } finally {
+      setSavingGuestId(null);
+    }
+  }
+
+  async function deleteGuest(id: string) {
+    setDeletingGuestId(id);
+    try {
+      const res = await fetch(`/api/guest-contacts/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Could not delete guest."); return; }
+      setSavedGuests((prev) => prev.filter((g) => g.id !== id));
+    } finally {
+      setDeletingGuestId(null);
+    }
+  }
 
   const canSave =
     name.trim().length >= 2 &&
@@ -298,6 +345,76 @@ export default function AccountPage() {
 
             {error && (
               <p className="text-center text-[13px] font-light text-rose-500">{error}</p>
+            )}
+
+            {/* Saved Guests */}
+            {savedGuests.length > 0 && !editing && (
+              <div className="space-y-1">
+                <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1 pb-1">Saved Guests</p>
+                <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
+                  {savedGuests.map((g, i) => (
+                    <div key={g.id} className={cn("px-4 py-3.5", i > 0 && "border-t border-black/[0.06]")}>
+                      {editingGuestId === g.id ? (
+                        <div className="space-y-2">
+                          <Input
+                            value={editingGuestName}
+                            onChange={(e) => setEditingGuestName(e.target.value)}
+                            placeholder="Name"
+                            autoFocus
+                            className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                          <Input
+                            value={editingGuestPhone}
+                            onChange={(e) => setEditingGuestPhone(e.target.value)}
+                            placeholder="Phone (optional)"
+                            className="h-8 flex-1 border-0 bg-transparent p-0 text-[14px] font-light text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                          <div className="flex gap-3 pt-1">
+                            <button
+                              onClick={() => setEditingGuestId(null)}
+                              className="text-[13px] font-light text-muted-foreground hover:text-foreground transition-colors duration-150"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => saveGuest(g.id)}
+                              disabled={!editingGuestName.trim() || savingGuestId === g.id}
+                              className="text-[13px] font-medium text-emerald-600 hover:text-emerald-700 disabled:opacity-40 transition-colors duration-150 flex items-center gap-1"
+                            >
+                              {savingGuestId === g.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[15px] font-light truncate">{g.name}</p>
+                            {g.phone && <p className="text-[13px] text-muted-foreground font-light">{g.phone}</p>}
+                          </div>
+                          <button
+                            onClick={() => startEditingGuest(g)}
+                            aria-label="Edit guest"
+                            className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-black/[0.06] transition-colors duration-150"
+                          >
+                            <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </button>
+                          <button
+                            onClick={() => deleteGuest(g.id)}
+                            disabled={deletingGuestId === g.id}
+                            aria-label="Delete guest"
+                            className="flex h-7 w-7 items-center justify-center rounded-full text-rose-400 hover:bg-rose-50 transition-colors duration-150 disabled:opacity-40"
+                          >
+                            {deletingGuestId === g.id
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            }
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
 
             {/* Sign out */}

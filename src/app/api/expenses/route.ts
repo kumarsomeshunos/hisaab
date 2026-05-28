@@ -194,8 +194,12 @@ export async function POST(request: NextRequest) {
         .from(friendships)
         .where(and(eq(friendships.userId, user.id), inArray(friendships.friendId, otherUserIds)));
       const friendSet = new Set(friendRows.map((r) => r.friendId));
-      if (otherUserIds.some((id) => !friendSet.has(id))) {
-        return NextResponse.json({ error: "All app-user participants must be your friends." }, { status: 403 });
+      const toFriend = otherUserIds.filter((id) => !friendSet.has(id));
+      if (toFriend.length > 0) {
+        await db.insert(friendships).values([
+          ...toFriend.map((id) => ({ userId: user.id, friendId: id })),
+          ...toFriend.map((id) => ({ userId: id, friendId: user.id })),
+        ]).onConflictDoNothing();
       }
     }
 

@@ -143,6 +143,8 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
   const [friendQuery, setFriendQuery] = useState("");
   const [allFriends, setAllFriends] = useState<AppFriend[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(true);
+  const [userSearchResults, setUserSearchResults] = useState<AppFriend[]>([]);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
   const [savedGuests, setSavedGuests] = useState<SavedGuest[]>([]);
   const [guestQuery, setGuestQuery] = useState("");
   const [manualGuestName, setManualGuestName] = useState("");
@@ -172,6 +174,21 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
       .then((d) => setCustomCategories(d.custom ?? []))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (friendQuery.trim().length < 2) { setUserSearchResults([]); return; }
+    const t = setTimeout(async () => {
+      setUserSearchLoading(true);
+      try {
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(friendQuery.trim())}`);
+        const data = await res.json();
+        setUserSearchResults(data.users ?? []);
+      } catch { /* ignore */ } finally {
+        setUserSearchLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [friendQuery]);
 
   const allCategories: CategoryItem[] = [
     ...DEFAULT_CATEGORIES.map((c) => ({ key: c.key, name: c.name, icon: c.icon as string })),
@@ -348,11 +365,14 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
          (f.username ?? "").toLowerCase().includes(friendQuery.toLowerCase()))
       )
     : [];
+  const friendIds = new Set(allFriends.map((f) => f.id));
+  const nonFriendResults = userSearchResults.filter((u) => !addedUserIds.has(u.id) && !friendIds.has(u.id));
 
   const addedGuestIds = new Set(participants.filter((p): p is GuestParticipant => p.kind === "guest" && p.guestId != null).map((p) => p.guestId!));
-  const filteredSavedGuests = savedGuests.filter(
-    (g) => !addedGuestIds.has(g.id) && (guestQuery.trim() === "" || g.name.toLowerCase().includes(guestQuery.toLowerCase()))
-  );
+  const top3Guests = savedGuests.filter((g) => !addedGuestIds.has(g.id)).slice(0, 3);
+  const searchedGuests = guestQuery.trim()
+    ? savedGuests.filter((g) => !addedGuestIds.has(g.id) && g.name.toLowerCase().includes(guestQuery.toLowerCase())).slice(0, 5)
+    : [];
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -453,24 +473,22 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
           {/* CATEGORY */}
           <div className="space-y-1">
             <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1 pb-1">Category</p>
-            <div className="overflow-x-auto pb-1 -mx-4 px-4">
-              <div className="flex gap-2 w-max">
-                {allCategories.map((cat) => (
-                  <button
-                    key={cat.key}
-                    onClick={() => setCategory(cat.key === category ? null : cat.key)}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-[13px] font-light whitespace-nowrap transition-colors duration-150 border",
-                      cat.key === category
-                        ? "bg-emerald-500 text-white border-emerald-500 font-medium"
-                        : "bg-card border-black/[0.06] text-foreground hover:bg-black/[0.03]"
-                    )}
-                  >
-                    <span>{cat.icon}</span>
-                    <span>{cat.name}</span>
-                  </button>
-                ))}
-              </div>
+            <div className="flex flex-wrap gap-2">
+              {allCategories.map((cat) => (
+                <button
+                  key={cat.key}
+                  onClick={() => setCategory(cat.key === category ? null : cat.key)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-2 rounded-[10px] text-[13px] font-light whitespace-nowrap transition-colors duration-150 border",
+                    cat.key === category
+                      ? "bg-emerald-500 text-white border-emerald-500 font-medium"
+                      : "bg-card border-black/[0.06] text-foreground hover:bg-black/[0.03]"
+                  )}
+                >
+                  <span>{cat.icon}</span>
+                  <span>{cat.name}</span>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -538,6 +556,32 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
               </div>
             )}
 
+            {userSearchLoading && (
+              <div className="flex justify-center py-2">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
+            {nonFriendResults.length > 0 && (
+              <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
+                <p className="px-4 py-2 text-[10px] font-medium uppercase tracking-[0.05em] text-muted-foreground border-b border-black/[0.06]">Not yet friends</p>
+                {nonFriendResults.map((u, i) => (
+                  <div key={u.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
+                    <Avatar className="h-8 w-8 shrink-0">
+                      <AvatarFallback className="bg-zinc-200 text-zinc-600 text-[12px] font-medium">
+                        {(u.name ?? u.username ?? "?").charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-light truncate">{u.name ?? u.username}</p>
+                      {u.username && <p className="text-[12px] text-muted-foreground font-light">@{u.username}</p>}
+                    </div>
+                    <Button size="sm" onClick={() => addUserParticipant(u)} className="h-7 px-3 rounded-lg bg-zinc-700 text-white text-[12px] font-medium hover:bg-zinc-800">Add</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {!contactPickerSupported && (
               <div className="flex gap-2">
                 <Input
@@ -572,9 +616,9 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
                   onChange={(e) => setGuestQuery(e.target.value)}
                   className="h-10 rounded-xl border-black/[0.1] bg-white pl-4 text-[14px] font-light placeholder:text-muted-foreground/50 focus-visible:ring-emerald-500/25 focus-visible:border-emerald-400"
                 />
-                {filteredSavedGuests.length > 0 && (
+                {(guestQuery.trim() ? searchedGuests : top3Guests).length > 0 && (
                   <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
-                    {filteredSavedGuests.slice(0, 5).map((g, i) => (
+                    {(guestQuery.trim() ? searchedGuests : top3Guests).map((g, i) => (
                       <div key={g.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
                         <Avatar className="h-8 w-8 shrink-0">
                           <AvatarFallback className="bg-zinc-200 text-zinc-600 text-[12px] font-medium">{g.name.charAt(0).toUpperCase()}</AvatarFallback>

@@ -143,13 +143,13 @@ export default function ExpensesPage() {
         </div>
 
         {/* Filter chips — categories */}
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-none">
+        <div className="flex flex-wrap gap-2">
           {allCategories.map((cat) => (
             <button
               key={cat.key}
               onClick={() => setSelectedCategory(selectedCategory === cat.key ? null : cat.key)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-light whitespace-nowrap transition-colors duration-150 shrink-0",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-light whitespace-nowrap transition-colors duration-150",
                 selectedCategory === cat.key
                   ? "bg-emerald-500 text-white"
                   : "bg-card border border-black/[0.06] text-foreground hover:bg-black/[0.04]"
@@ -163,13 +163,13 @@ export default function ExpensesPage() {
 
         {/* Filter chips — groups */}
         {groups.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-none">
+          <div className="flex flex-wrap gap-2">
             {groups.map((g) => (
               <button
                 key={g.id}
                 onClick={() => setSelectedGroupId(selectedGroupId === g.id ? null : g.id)}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-light whitespace-nowrap transition-colors duration-150 shrink-0",
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-light whitespace-nowrap transition-colors duration-150",
                   selectedGroupId === g.id
                     ? "bg-emerald-500 text-white"
                     : "bg-card border border-black/[0.06] text-foreground hover:bg-black/[0.04]"
@@ -223,7 +223,7 @@ export default function ExpensesPage() {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-[14px] font-light tabular-nums">₹{formatPaise(expense.amount)}</p>
-                    <p className="text-[11px] font-light text-muted-foreground tabular-nums">your share ₹{formatPaise(expense.myShare)}</p>
+                    <p className={cn("text-[11px] font-light tabular-nums", isMyExpense ? "text-emerald-600" : "text-rose-500")}>your share ₹{formatPaise(expense.myShare)}</p>
                   </div>
                 </Link>
               );
