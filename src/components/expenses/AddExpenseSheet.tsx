@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
+import { useOfflineMutate } from "@/lib/offline/hooks";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -155,6 +156,7 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
   // Submission
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { mutate } = useOfflineMutate();
 
   const titleRef = useRef<HTMLInputElement>(null);
   useEffect(() => { setTimeout(() => titleRef.current?.focus(), 150); }, []);
@@ -338,13 +340,20 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
         ...(rawValues ? { rawValues } : {}),
       };
 
-      const res = await fetch(editInitial ? `/api/expenses/${editInitial.id}` : "/api/expenses", {
+      const result = await mutate({
+        url: editInitial ? `/api/expenses/${editInitial.id}` : "/api/expenses",
         method: editInitial ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body,
+        label: editInitial ? "Edit expense" : "Add expense",
       });
-      const data = await res.json();
-      if (!res.ok) {
+
+      if (result.queued) {
+        onClose();
+        return;
+      }
+
+      const data = await result.response.json();
+      if (!result.response.ok) {
         setError(data.error ?? "Something went wrong.");
         return;
       }
@@ -353,7 +362,7 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, title, notes, amountStr, dateStr, paidByParticipant, splitMode, category, participants, groupId, editInitial, onSaved, onClose]);
+  }, [canSubmit, title, notes, amountStr, dateStr, paidByParticipant, splitMode, category, participants, groupId, editInitial, onSaved, onClose, mutate]);
 
   // ── Filtered lists ─────────────────────────────────────────────────────────
 

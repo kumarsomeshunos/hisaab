@@ -10,6 +10,7 @@ import { ArrowLeft, Loader2, Receipt, Trash2, Check, Clock, Send, X, Pencil, Fil
 import { cn } from "@/lib/utils";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
 import { AddExpenseSheet } from "@/components/expenses/AddExpenseSheet";
+import { useOfflineMutate } from "@/lib/offline/hooks";
 
 function formatPaise(paise: number): string {
   return (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -114,6 +115,7 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
   const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { mutate } = useOfflineMutate();
 
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((d) => {
@@ -134,6 +136,12 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
 
   useEffect(() => { fetchExpense(); }, [fetchExpense]);
 
+  useEffect(() => {
+    const handler = () => fetchExpense();
+    window.addEventListener("dutch-data-refresh", handler);
+    return () => window.removeEventListener("dutch-data-refresh", handler);
+  }, [fetchExpense]);
+
   // Close lightbox on Escape
   useEffect(() => {
     if (lightboxIndex === null) return;
@@ -146,51 +154,57 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
     if (deleting) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/expenses/${expenseId}`, { method: "DELETE" });
-      if (res.ok) router.push("/expenses");
+      const result = await mutate({ url: `/api/expenses/${expenseId}`, method: "DELETE", label: "Delete expense" });
+      if (result.queued) return;
+      if (result.response.ok) router.push("/expenses");
     } finally {
       setDeleting(false);
     }
-  }, [expenseId, router, deleting]);
+  }, [expenseId, router, deleting, mutate]);
 
   const submitComment = useCallback(async () => {
     const body = commentText.trim();
     if (!body || submittingComment) return;
     setSubmittingComment(true);
     try {
-      const res = await fetch(`/api/expenses/${expenseId}/comments`, {
+      const result = await mutate({
+        url: `/api/expenses/${expenseId}/comments`,
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body }),
+        body: { body },
+        label: "Add comment",
       });
-      if (res.ok) {
-        setCommentText("");
-        fetchExpense();
-      }
+      setCommentText("");
+      if (result.queued) return;
+      if (result.response.ok) fetchExpense();
     } finally {
       setSubmittingComment(false);
     }
-  }, [commentText, expenseId, fetchExpense, submittingComment]);
+  }, [commentText, expenseId, fetchExpense, submittingComment, mutate]);
 
   const deleteComment = useCallback(async (commentId: string) => {
     setDeletingCommentId(commentId);
     try {
-      await fetch(`/api/expenses/${expenseId}/comments/${commentId}`, { method: "DELETE" });
+      const result = await mutate({ url: `/api/expenses/${expenseId}/comments/${commentId}`, method: "DELETE", label: "Delete comment" });
+      if (result.queued) return;
       fetchExpense();
     } finally {
       setDeletingCommentId(null);
     }
-  }, [expenseId, fetchExpense]);
+  }, [expenseId, fetchExpense, mutate]);
 
   const handleSettle = useCallback(async (mySplit: Split, payerId: string) => {
     setSettling(true);
     try {
-      const res = await fetch("/api/settlements", {
+      const result = await mutate({
+        url: "/api/settlements",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ friendUserId: payerId, amount: mySplit.amount / 100, direction: "i_paid", note: settleNote.trim() || undefined }),
+        body: { friendUserId: payerId, amount: mySplit.amount / 100, direction: "i_paid", note: settleNote.trim() || undefined },
+        label: "Record settlement",
       });
-      if (!res.ok) return;
+      setSettleOpen(false);
+      setSettleNote("");
+      if (result.queued) return;
+      if (!result.response.ok) return;
       setExpense((prev) => {
         if (!prev) return prev;
         return {
@@ -201,12 +215,10 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
         };
       });
       window.dispatchEvent(new CustomEvent("settlement-recorded"));
-      setSettleOpen(false);
-      setSettleNote("");
     } finally {
       setSettling(false);
     }
-  }, [settleNote]);
+  }, [settleNote, mutate]);
 
   const uploadFiles = useCallback(async (files: FileList) => {
     setUploadError(null);
@@ -266,12 +278,13 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
   const deleteMedia = useCallback(async (mediaId: string) => {
     setDeletingMediaId(mediaId);
     try {
-      await fetch(`/api/expenses/${expenseId}/media/${mediaId}`, { method: "DELETE" });
+      const result = await mutate({ url: `/api/expenses/${expenseId}/media/${mediaId}`, method: "DELETE", label: "Delete attachment" });
+      if (result.queued) return;
       fetchExpense();
     } finally {
       setDeletingMediaId(null);
     }
-  }, [expenseId, fetchExpense]);
+  }, [expenseId, fetchExpense, mutate]);
 
   if (loading) {
     return (

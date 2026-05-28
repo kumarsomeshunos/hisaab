@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Users, Loader2, ChevronRight, X, ArrowLeft, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useOfflineMutate } from "@/lib/offline/hooks";
 
 function formatPaise(paise: number): string {
   return (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -34,6 +35,7 @@ export default function GroupsPage() {
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { mutate } = useOfflineMutate();
 
   // Step 2 search state
   const [allFriends, setAllFriends] = useState<AppFriend[]>([]);
@@ -115,19 +117,16 @@ export default function GroupsPage() {
       if (memberUserIds.length > 0) body.memberUserIds = memberUserIds;
       if (memberGuests.length > 0) body.memberGuests = memberGuests;
 
-      const res = await fetch("/api/groups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Something went wrong."); return; }
+      const result = await mutate({ url: "/api/groups", method: "POST", body, label: "Create group" });
       setSheetOpen(false);
+      if (result.queued) return;
+      const data = await result.response.json();
+      if (!result.response.ok) { setError(data.error ?? "Something went wrong."); return; }
       fetchGroups();
     } finally {
       setCreating(false);
     }
-  }, [newGroupName, creating, pendingMembers, fetchGroups]);
+  }, [newGroupName, creating, pendingMembers, fetchGroups, mutate]);
 
   const addedUserIds = new Set(pendingMembers.filter((m) => m.type === "user").map((m) => (m as Extract<PendingMember, { type: "user" }>).id));
   const addedGuestIds = new Set(

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AppShell } from "@/components/layout/AppShell";
 import { cn } from "@/lib/utils";
+import { useOfflineMutate } from "@/lib/offline/hooks";
 
 type UsernameStatus = "idle" | "checking" | "available" | "taken" | "invalid" | "unchanged";
 
@@ -31,6 +32,7 @@ function initials(name: string | null, username: string | null): string {
 
 export default function AccountPage() {
   const router = useRouter();
+  const { mutate } = useOfflineMutate();
 
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -115,13 +117,18 @@ export default function AccountPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/account", {
+      const result = await mutate({
+        url: "/api/account",
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), username: username.toLowerCase(), upiId: upiId.trim(), avatar, phone: phone.trim() || null }),
+        body: { name: name.trim(), username: username.toLowerCase(), upiId: upiId.trim(), avatar, phone: phone.trim() || null },
+        label: "Save profile",
       });
-      const data = await res.json();
-      if (!res.ok) {
+      if (result.queued) {
+        setEditing(false);
+        return;
+      }
+      const data = await result.response.json();
+      if (!result.response.ok) {
         setError(data.error ?? "Something went wrong.");
         if (data.error?.toLowerCase().includes("taken")) setUsernameStatus("taken");
         return;
@@ -131,7 +138,7 @@ export default function AccountPage() {
     } finally {
       setSaving(false);
     }
-  }, [user, name, username, upiId, avatar, phone]);
+  }, [user, name, username, upiId, avatar, phone, mutate]);
 
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
@@ -154,15 +161,17 @@ export default function AccountPage() {
     if (!editingGuestName.trim()) return;
     setSavingGuestId(id);
     try {
-      const res = await fetch(`/api/guest-contacts/${id}`, {
+      const result = await mutate({
+        url: `/api/guest-contacts/${id}`,
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editingGuestName.trim(), phone: editingGuestPhone.trim() || null, upiId: editingGuestUpiId.trim() || null, email: editingGuestEmail.trim() || null }),
+        body: { name: editingGuestName.trim(), phone: editingGuestPhone.trim() || null, upiId: editingGuestUpiId.trim() || null, email: editingGuestEmail.trim() || null },
+        label: "Save guest contact",
       });
-      const data = await res.json();
-      if (!res.ok) return;
-      setSavedGuests((prev) => prev.map((g) => g.id === id ? { id, name: data.guest.name, phone: data.guest.phone, upiId: data.guest.upiId ?? null, email: data.guest.email ?? null } : g));
       setEditingGuestId(null);
+      if (result.queued) return;
+      const data = await result.response.json();
+      if (!result.response.ok) return;
+      setSavedGuests((prev) => prev.map((g) => g.id === id ? { id, name: data.guest.name, phone: data.guest.phone, upiId: data.guest.upiId ?? null, email: data.guest.email ?? null } : g));
     } finally {
       setSavingGuestId(null);
     }
@@ -171,9 +180,10 @@ export default function AccountPage() {
   async function deleteGuest(id: string) {
     setDeletingGuestId(id);
     try {
-      const res = await fetch(`/api/guest-contacts/${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Could not delete guest."); return; }
+      const result = await mutate({ url: `/api/guest-contacts/${id}`, method: "DELETE", label: "Delete guest contact" });
+      if (result.queued) return;
+      const data = await result.response.json();
+      if (!result.response.ok) { setError(data.error ?? "Could not delete guest."); return; }
       setSavedGuests((prev) => prev.filter((g) => g.id !== id));
     } finally {
       setDeletingGuestId(null);

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type ActivityEvent, describeEvent, eventHref, relativeTime } from "@/lib/activity-utils";
+import { useOfflineMutate } from "@/lib/offline/hooks";
 
 function formatPaise(paise: number): string {
   return (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -71,6 +72,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [memberQuery, setMemberQuery] = useState("");
   const [manualGuestName, setManualGuestName] = useState("");
   const [addingMember, setAddingMember] = useState(false);
+  const { mutate } = useOfflineMutate();
 
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((d) => setCurrentUser(d.user ?? null)).catch(() => {});
@@ -120,36 +122,39 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const handleDeleteExpense = useCallback(async (id: string) => {
     setDeletingId(id);
     try {
-      await fetch(`/api/expenses/${id}`, { method: "DELETE" });
+      const result = await mutate({ url: `/api/expenses/${id}`, method: "DELETE", label: "Delete expense" });
+      if (result.queued) return;
+      if (!result.response.ok) return;
       setGroupExpenses((prev) => prev.filter((e) => e.id !== id));
       fetchGroup();
     } finally {
       setDeletingId(null);
     }
-  }, [fetchGroup]);
+  }, [fetchGroup, mutate]);
 
   const addMember = useCallback(async (payload: object) => {
     setAddingMember(true);
     try {
-      const res = await fetch(`/api/groups/${groupId}/members`, {
+      const result = await mutate({
+        url: `/api/groups/${groupId}/members`,
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: payload,
+        label: "Add group member",
       });
-      if (res.ok) {
-        setAddMemberOpen(false);
-        setMemberQuery("");
-        fetchGroup();
-      }
+      setAddMemberOpen(false);
+      setMemberQuery("");
+      if (result.queued) return;
+      if (result.response.ok) fetchGroup();
     } finally {
       setAddingMember(false);
     }
-  }, [groupId, fetchGroup]);
+  }, [groupId, fetchGroup, mutate]);
 
   const removeMember = useCallback(async (memberId: string) => {
-    await fetch(`/api/groups/${groupId}/members/${memberId}`, { method: "DELETE" });
+    const result = await mutate({ url: `/api/groups/${groupId}/members/${memberId}`, method: "DELETE", label: "Remove group member" });
+    if (result.queued) return;
     fetchGroup();
-  }, [groupId, fetchGroup]);
+  }, [groupId, fetchGroup, mutate]);
 
   const handleSettle = useCallback(async () => {
     if (!settleOpen || !settleAmount || settling) return;
@@ -162,21 +167,21 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
         ? settleOpen.memberId
         : members.find((m) => m.type === "user" && m.id === currentUser?.id)?.memberId;
 
-      const res = await fetch(`/api/groups/${groupId}/settlements`, {
+      const result = await mutate({
+        url: `/api/groups/${groupId}/settlements`,
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromMemberId, toMemberId, amount: parseFloat(settleAmount), note: settleNote || undefined }),
+        body: { fromMemberId, toMemberId, amount: parseFloat(settleAmount), note: settleNote || undefined },
+        label: "Record settlement",
       });
-      if (res.ok) {
-        setSettleOpen(null);
-        setSettleAmount("");
-        setSettleNote("");
-        fetchGroup();
-      }
+      setSettleOpen(null);
+      setSettleAmount("");
+      setSettleNote("");
+      if (result.queued) return;
+      if (result.response.ok) fetchGroup();
     } finally {
       setSettling(false);
     }
-  }, [settleOpen, settleAmount, settleNote, settling, members, currentUser, groupId, fetchGroup]);
+  }, [settleOpen, settleAmount, settleNote, settling, members, currentUser, groupId, fetchGroup, mutate]);
 
   const memberQueryLower = memberQuery.toLowerCase();
   const existingMemberUserIds = new Set(members.filter((m) => m.type === "user").map((m) => m.id));

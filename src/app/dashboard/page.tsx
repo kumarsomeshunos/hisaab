@@ -6,6 +6,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ArrowDownLeft, ArrowUpRight, Receipt, Users, Trash2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useOfflineMutate } from "@/lib/offline/hooks";
 
 function initials(name: string | null, username: string | null): string {
   if (name) return name.trim().charAt(0).toUpperCase();
@@ -45,6 +46,7 @@ export default function DashboardPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { mutate } = useOfflineMutate();
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -80,13 +82,19 @@ export default function DashboardPage() {
     fetchData();
     const handler = () => fetchData();
     window.addEventListener("expense-added", handler);
-    return () => window.removeEventListener("expense-added", handler);
+    window.addEventListener("dutch-data-refresh", handler);
+    return () => {
+      window.removeEventListener("expense-added", handler);
+      window.removeEventListener("dutch-data-refresh", handler);
+    };
   }, [fetchData]);
 
   const handleDelete = useCallback(async (id: string) => {
     setDeletingId(id);
     try {
-      await fetch(`/api/expenses/${id}`, { method: "DELETE" });
+      const result = await mutate({ url: `/api/expenses/${id}`, method: "DELETE", label: "Delete expense" });
+      if (result.queued) return;
+      if (!result.response.ok) return;
       setExpenses((prev) => prev.filter((e) => e.id !== id));
       const balRes = await fetch("/api/balances");
       const balData = await balRes.json();
@@ -101,7 +109,7 @@ export default function DashboardPage() {
     } finally {
       setDeletingId(null);
     }
-  }, []);
+  }, [mutate]);
 
   const netSign = balances.netTotal >= 0 ? "+" : "-";
   const netAbs = Math.abs(balances.netTotal);

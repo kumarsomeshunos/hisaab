@@ -4,7 +4,10 @@ import { useState, useEffect } from "react";
 import { Plus } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { BottomNav } from "./BottomNav";
+import { OfflineBanner } from "./OfflineBanner";
+import { SyncErrorDrawer } from "./SyncErrorDrawer";
 import { AddExpenseSheet } from "@/components/expenses/AddExpenseSheet";
+import { useSyncManager } from "@/lib/offline/hooks";
 
 type CurrentUser = { id: string; name: string | null; username: string | null };
 
@@ -12,6 +15,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [errorDrawerOpen, setErrorDrawerOpen] = useState(false);
+
+  const { pendingCount, errors, dismissErrors } = useSyncManager();
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -29,12 +35,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-full min-h-screen">
       <Sidebar />
       <div className="flex flex-1 flex-col min-h-screen">
-        {/* Pass refreshKey via a custom event so pages can react */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden pb-16 md:pb-0" data-refresh={refreshKey}>
           {children}
         </main>
       </div>
       <BottomNav />
+
+      <OfflineBanner
+        pendingCount={pendingCount}
+        errors={errors}
+        onShowErrors={() => setErrorDrawerOpen(true)}
+      />
+
+      <SyncErrorDrawer
+        errors={errors}
+        open={errorDrawerOpen}
+        onClose={() => setErrorDrawerOpen(false)}
+        onDismissAll={dismissErrors}
+      />
 
       {/* Global FAB — above bottom nav on mobile, bottom-right on desktop */}
       {currentUser && (

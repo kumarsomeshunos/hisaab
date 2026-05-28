@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Loader2, Receipt, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useOfflineMutate } from "@/lib/offline/hooks";
 
 function formatPaise(paise: number): string {
   return (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -56,6 +57,7 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
   const [settleAmountStr, setSettleAmountStr] = useState("");
   const [settleNote, setSettleNote] = useState("");
   const [settling, setSettling] = useState(false);
+  const { mutate } = useOfflineMutate();
 
   useEffect(() => {
     fetch("/api/auth/me").then((r) => r.json()).then((d) => setCurrentUserId(d.user?.id ?? null)).catch(() => {});
@@ -95,22 +97,24 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
     setSettling(true);
     try {
       const direction = balance < 0 ? "i_paid" : "they_paid";
-      const res = await fetch("/api/settlements", {
+      const result = await mutate({
+        url: "/api/settlements",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ friendUserId: friend.id, amount, direction, note: settleNote.trim() || undefined }),
+        body: { friendUserId: friend.id, amount, direction, note: settleNote.trim() || undefined },
+        label: "Record settlement",
       });
-      if (!res.ok) return;
-      const paise = Math.round(amount * 100);
-      setBalance((b) => direction === "i_paid" ? b + paise : b - paise);
-      window.dispatchEvent(new CustomEvent("settlement-recorded"));
       setSettleOpen(false);
       setSettleAmountStr("");
       setSettleNote("");
+      if (result.queued) return;
+      if (!result.response.ok) return;
+      const paise = Math.round(amount * 100);
+      setBalance((b) => direction === "i_paid" ? b + paise : b - paise);
+      window.dispatchEvent(new CustomEvent("settlement-recorded"));
     } finally {
       setSettling(false);
     }
-  }, [settleAmountStr, settleNote, balance, friend]);
+  }, [settleAmountStr, settleNote, balance, friend, mutate]);
 
   if (loading) {
     return (

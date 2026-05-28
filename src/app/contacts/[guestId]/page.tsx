@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, ExternalLink, Loader2, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useOfflineMutate } from "@/lib/offline/hooks";
 
 function formatPaise(paise: number): string {
   return (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -37,6 +38,7 @@ export default function ContactProfilePage({ params }: { params: Promise<{ guest
   const [settleAmountStr, setSettleAmountStr] = useState("");
   const [settleNote, setSettleNote] = useState("");
   const [settling, setSettling] = useState(false);
+  const { mutate } = useOfflineMutate();
 
   useEffect(() => {
     fetch(`/api/contacts/${encodeURIComponent(guestId)}`)
@@ -71,22 +73,24 @@ export default function ContactProfilePage({ params }: { params: Promise<{ guest
     setSettling(true);
     try {
       const direction = balance < 0 ? "i_paid" : "they_paid";
-      const res = await fetch("/api/settlements", {
+      const result = await mutate({
+        url: "/api/settlements",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ guestId: guest.id, amount, direction, note: settleNote.trim() || undefined }),
+        body: { guestId: guest.id, amount, direction, note: settleNote.trim() || undefined },
+        label: "Record settlement",
       });
-      if (!res.ok) return;
-      const paise = Math.round(amount * 100);
-      setBalance((b) => direction === "i_paid" ? b + paise : b - paise);
-      window.dispatchEvent(new CustomEvent("settlement-recorded"));
       setSettleOpen(false);
       setSettleAmountStr("");
       setSettleNote("");
+      if (result.queued) return;
+      if (!result.response.ok) return;
+      const paise = Math.round(amount * 100);
+      setBalance((b) => direction === "i_paid" ? b + paise : b - paise);
+      window.dispatchEvent(new CustomEvent("settlement-recorded"));
     } finally {
       setSettling(false);
     }
-  }, [settleAmountStr, settleNote, balance, guest]);
+  }, [settleAmountStr, settleNote, balance, guest, mutate]);
 
   if (loading) {
     return (

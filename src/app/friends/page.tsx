@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AppShell } from "@/components/layout/AppShell";
 import { cn } from "@/lib/utils";
+import { useOfflineMutate } from "@/lib/offline/hooks";
 
 type Friend = {
   id: string;
@@ -52,6 +53,7 @@ export default function FriendsPage() {
 
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const { mutate } = useOfflineMutate();
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -79,14 +81,16 @@ export default function FriendsPage() {
     fetchBalances();
   }, [fetchBalances]);
 
-  // Refresh balances when an expense is added or settlement recorded
+  // Refresh balances when an expense is added, settlement recorded, or sync completes
   useEffect(() => {
     const handler = () => fetchBalances();
     window.addEventListener("expense-added", handler);
     window.addEventListener("settlement-recorded", handler);
+    window.addEventListener("dutch-data-refresh", handler);
     return () => {
       window.removeEventListener("expense-added", handler);
       window.removeEventListener("settlement-recorded", handler);
+      window.removeEventListener("dutch-data-refresh", handler);
     };
   }, [fetchBalances]);
 
@@ -118,13 +122,18 @@ export default function FriendsPage() {
   const handleAdd = useCallback(async (user: SearchUser) => {
     setAddStates((s) => ({ ...s, [user.id]: "loading" }));
     try {
-      const res = await fetch("/api/friends", {
+      const result = await mutate({
+        url: "/api/friends",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usernameOrEmail: user.username ?? user.id }),
+        body: { usernameOrEmail: user.username ?? user.id },
+        label: "Add friend",
       });
-      const data = await res.json();
-      if (!res.ok) {
+      if (result.queued) {
+        setAddStates((s) => ({ ...s, [user.id]: "done" }));
+        return;
+      }
+      const data = await result.response.json();
+      if (!result.response.ok) {
         setAddStates((s) => ({ ...s, [user.id]: "idle" }));
         return;
       }
@@ -137,20 +146,21 @@ export default function FriendsPage() {
     } catch {
       setAddStates((s) => ({ ...s, [user.id]: "idle" }));
     }
-  }, []);
+  }, [mutate]);
 
   const handleRemove = useCallback(async (friendId: string) => {
     setRemovingId(friendId);
     setOpenMenuId(null);
     try {
-      await fetch(`/api/friends/${friendId}`, { method: "DELETE" });
+      const result = await mutate({ url: `/api/friends/${friendId}`, method: "DELETE", label: "Remove friend" });
+      if (result.queued) return;
       setFriends((prev) => prev.filter((f) => f.id !== friendId));
     } catch {
       // silently leave list unchanged on failure
     } finally {
       setRemovingId(null);
     }
-  }, []);
+  }, [mutate]);
 
   return (
     <AppShell>

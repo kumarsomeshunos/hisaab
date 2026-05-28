@@ -61,6 +61,7 @@ Dutch is a Splitwise-like expense-splitting Progressive Web App for groups of fr
 | zod | Input validation at every API boundary | 2026-05-28 |
 | @aws-sdk/client-s3 | S3-compatible client for Cloudflare R2 media uploads | 2026-05-29 |
 | @aws-sdk/s3-request-presigner | Presigned URL generation for browser-direct R2 uploads | 2026-05-29 |
+| idb | Typed, Promise-based IndexedDB wrapper for offline mutation queue | 2026-05-29 |
 
 ---
 
@@ -152,8 +153,10 @@ hisaab/
 │   │   ├── expenses/
 │   │   │   └── AddExpenseSheet.tsx  # Full-screen expense form: 6 split modes, categories, notes
 │   │   ├── layout/
-│   │   │   ├── AppShell.tsx      # Authenticated page wrapper (Sidebar + BottomNav + main)
+│   │   │   ├── AppShell.tsx      # Authenticated page wrapper (Sidebar + BottomNav + main); mounts useSyncManager
 │   │   │   ├── BottomNav.tsx     # Mobile bottom tab bar (5 tabs: Dashboard/Expenses/Groups/Friends/Activity)
+│   │   │   ├── OfflineBanner.tsx # Fixed offline indicator: pending count, iOS notice, sync error button
+│   │   │   ├── SyncErrorDrawer.tsx # Bottom sheet listing failed sync mutations with dismiss controls
 │   │   │   └── Sidebar.tsx       # Desktop left navigation (6 items, hidden on mobile)
 │   │   └── ui/                   # shadcn/ui components — never modify directly
 │   │       ├── avatar.tsx
@@ -169,16 +172,22 @@ hisaab/
 │   │   ├── db/
 │   │   │   ├── index.ts          # Drizzle client + neon-http connection
 │   │   │   └── schema.ts         # All tables — see Data Models section
+│   │   ├── offline/
+│   │   │   ├── db.ts             # IndexedDB store (idb) — PendingMutation queue: enqueue/get/mark/remove
+│   │   │   ├── sync.ts           # syncQueue() + registerBackgroundSync() — replay queued mutations
+│   │   │   └── hooks.ts          # useOnlineStatus, useOfflineMutate, useSyncManager
 │   │   ├── categories.ts         # DEFAULT_CATEGORIES (12 built-ins) + resolveCategory() helper
 │   │   ├── activity.ts           # writeActivity() helper — fire-and-forget; never blocks response
 │   │   ├── r2.ts                 # Cloudflare R2 S3Client, R2_BUCKET, R2_PUBLIC_URL
 │   │   └── utils.ts              # cn() helper for conditional class merging
+│   ├── worker/
+│   │   └── index.ts              # Custom SW entry — handles Background Sync 'dutch-sync' tag → postMessage clients
 │   └── middleware.ts             # Edge middleware — session validation + route guard
 ├── .env.example                  # Documented env vars (no real values)
 ├── ARCHITECTURE.md               # This file
 ├── CLAUDE.md                     # AI behavioural guidelines
 ├── drizzle.config.ts             # Drizzle Kit config — points at DATABASE_URL
-├── next.config.ts                # Next.js config — wraps withPWA; do not remove --webpack
+├── next.config.ts                # Next.js config — wraps withPWA with customWorkerSrc; do not remove --webpack
 ├── package.json                  # Scripts use --webpack flag; do not remove
 └── tsconfig.json
 ```
@@ -516,6 +525,47 @@ ActivityLog: id, type, actorId → User, groupId → Group | null, payload JSON,
 | Icons | `public/icons/icon-192.png`, `public/icons/icon-512.png` (placeholders) |
 | SW disabled in dev | Yes — `process.env.NODE_ENV === 'development'` |
 | Build mode | Webpack — `npm run dev --webpack`, `npm run build --webpack` |
+| Custom SW entry | `src/worker/index.ts` — compiled and appended via `customWorkerSrc` in next-pwa config |
+
+---
+
+## Offline Architecture
+
+Dutch is fully offline-capable for read and write.
+
+**Read path (offline) — Workbox NetworkFirst**
+All `GET /api/*` responses (except `/api/auth/*`) are cached by Workbox with a 1-day TTL. Static JS/CSS/icon bundles are pre-cached. Any previously visited page loads from cache without a network connection.
+
+**Write path (offline) — IndexedDB mutation queue**
+Every mutation goes through `useOfflineMutate()` (in `src/lib/offline/hooks.ts`):
+- If `navigator.onLine` → direct `fetch()`, returns `{ queued: false, response }`
+- If offline → stores a `PendingMutation` record in IndexedDB (`idb`), returns `{ queued: true }`; shows "Saved offline" toast; registers Background Sync tag
+
+```
+PendingMutation {
+  id, url, method, body (JSON string), headers,
+  label (human-readable, e.g. "Delete expense"),
+  timestamp, status ("pending" | "error"), errorMessage?
+}
+```
+
+**Sync path**
+Triggered by: `window 'online'` event, app load (if online), or SW Background Sync postMessage.
+`syncQueue()` replays mutations in timestamp order:
+- 2xx → `removeMutation(id)` → dispatches `'dutch-data-refresh'` custom event
+- non-2xx → `markMutationError(id, serverMessage)` → shown in SyncErrorDrawer
+- network error → stops loop (still offline)
+
+**Background Sync (Chrome/Android only)**
+`src/worker/index.ts` handles the `'dutch-sync'` SW sync event by postMessaging all open clients. The client calls `syncQueue()` on receiving the message. Falls back to `'online'` event on Safari/iOS.
+
+**`'dutch-data-refresh'` event**
+After any sync, `syncQueue()` dispatches this custom event on `window`. All pages that fetch data listen for it alongside the existing `'expense-added'` event to trigger a re-fetch.
+
+**Limitations**
+- Media uploads (presign + PUT to R2) are multi-step and cannot be atomically queued — upload UI is disabled while offline.
+- No optimistic UI for creates — new items appear after sync completes. Pending count in OfflineBanner indicates queued state.
+- Background Sync is Chrome/Edge only. OfflineBanner shows an iOS/Safari notice when the API is unavailable.
 
 ---
 
@@ -661,3 +711,4 @@ _Not yet configured._
 | 2026-05-29 | Round 5 — group activity feed on group detail page; phone on user profiles (Indian mobile validation); upiId + email on guest profiles; name-contains search alongside username-prefix search; guest profile settle up (guestId branch in POST /api/settlements); shared activity utilities extracted to src/lib/activity-utils.ts |
 | 2026-05-29 | Round 6 bug fixes — non-friend group members viewable via /friends/[username] (limited profile, no settle/expenses); 1-year sessions (was 30 days); expense edit 400 fixed (Split.participantId added, editInitial now sends actual participant UUIDs); split breakdown rows clickable (Link to /friends/[username] or /contacts/[guestId]); balances API now includes settlements for both user and guest balances |
 | 2026-05-29 | Rename Hisaab → Dutch (product name, codename stays hisaab); Cloudflare R2 expense media uploads — expense_media table, presign/confirm/delete API routes, image gallery + lightbox + PDF list on expense detail page; @aws-sdk/client-s3 + s3-request-presigner added |
+| 2026-05-29 | Offline-first PWA — IndexedDB mutation queue (idb), syncQueue() + Background Sync SW entry, useOfflineMutate hook, OfflineBanner + SyncErrorDrawer UI; all 21 mutation call sites across 9 files updated; dutch-data-refresh event wires pages to post-sync refetch |
