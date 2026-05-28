@@ -48,7 +48,7 @@ export async function registerBackgroundSync(): Promise<void> {
   if (!("serviceWorker" in navigator) || !("SyncManager" in window)) return;
   try {
     const reg = await navigator.serviceWorker.ready;
-    await reg.sync.register("dutch-sync");
+    await (reg as ServiceWorkerRegistration & { sync: { register(tag: string): Promise<void> } }).sync.register("dutch-sync");
   } catch {
     // Background Sync not available — online event fallback is sufficient
   }

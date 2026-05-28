@@ -9,8 +9,8 @@ export const r2 = new S3Client({
   },
   // Disable automatic checksums — browsers can't send the CRC32 header
   // that SDK v3 adds by default, which breaks presigned PUT URLs.
-  requestChecksumCalculation: "when_required",
-  responseChecksumValidation: "when_required",
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
 });
 
 export const R2_BUCKET = process.env.CLOUDFLARE_R2_BUCKET!;
