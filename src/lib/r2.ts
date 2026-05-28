@@ -7,6 +7,10 @@ export const r2 = new S3Client({
     accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID!,
     secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY!,
   },
+  // Disable automatic checksums — browsers can't send the CRC32 header
+  // that SDK v3 adds by default, which breaks presigned PUT URLs.
+  requestChecksumCalculation: "when_required",
+  responseChecksumValidation: "when_required",
 });
 
 export const R2_BUCKET = process.env.CLOUDFLARE_R2_BUCKET!;
