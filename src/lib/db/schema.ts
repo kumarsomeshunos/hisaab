@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, boolean, timestamp, integer, primaryKey, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const users = pgTable("users", {
@@ -32,6 +32,24 @@ export const sessions = pgTable("sessions", {
   lastActiveAt: timestamp("last_active_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const friendships = pgTable(
+  "friendships",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    friendId: uuid("friend_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.friendId] }),
+    check("no_self_friendship", sql`${t.userId} != ${t.friendId}`),
+  ]
+);
+
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type OtpCode = typeof otpCodes.$inferSelect;
+export type Friendship = typeof friendships.$inferSelect;
