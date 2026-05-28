@@ -16,7 +16,7 @@ Hisaab is a Splitwise-like expense-splitting Progressive Web App for groups of f
 - **Type:** Progressive Web App (single Next.js application)
 - **Purpose:** Track and settle shared expenses among friends and groups
 - **Target Users:** Small groups (friends, flatmates, travel companions) splitting costs informally, primarily in India
-- **Stage:** Prototype — auth implemented (email OTP), dashboard UI done; expense/group features planned
+- **Stage:** Prototype — auth, expenses, friends, groups, activity feed, and settlements implemented
 
 ---
 
@@ -76,31 +76,57 @@ hisaab/
 ├── src/
 │   ├── app/
 │   │   ├── api/
-│   │   │   └── auth/
-│   │   │       ├── me/route.ts               # GET: current user from session
-│   │   │       ├── signout/route.ts           # POST: destroy session
-│   │   │       ├── setup/route.ts             # POST: set name + username (onboarding)
-│   │   │       ├── username-check/route.ts    # GET: check username availability
-│   │   │       └── otp/
-│   │   │           ├── send/route.ts          # POST: generate + email OTP
-│   │   │           └── verify/route.ts        # POST: verify OTP, create session
-│   │   │   └── friends/
-│   │   │       ├── route.ts                  # GET: list friends | POST: add friend
-│   │   │       └── [friendId]/route.ts        # DELETE: remove friendship (both rows)
-│   │   │   └── users/
-│   │   │       └── search/route.ts            # GET: search users by username/email
+│   │   │   ├── auth/
+│   │   │   │   ├── me/route.ts               # GET: current user from session
+│   │   │   │   ├── signout/route.ts           # POST: destroy session
+│   │   │   │   ├── setup/route.ts             # POST: set name + username (onboarding)
+│   │   │   │   ├── username-check/route.ts    # GET: check username availability
+│   │   │   │   └── otp/
+│   │   │   │       ├── send/route.ts          # POST: generate + email OTP
+│   │   │   │       └── verify/route.ts        # POST: verify OTP, create session
+│   │   │   ├── friends/
+│   │   │   │   ├── route.ts                  # GET: list friends | POST: add friend + write activity
+│   │   │   │   └── [friendId]/route.ts        # DELETE: remove friendship + write activity
+│   │   │   ├── users/
+│   │   │   │   └── search/route.ts            # GET: search users by username/email
+│   │   │   ├── groups/
+│   │   │   │   ├── route.ts                  # GET: list user's groups | POST: create group
+│   │   │   │   └── [id]/
+│   │   │   │       ├── route.ts              # GET: group detail + member balances | PATCH: rename
+│   │   │   │       ├── members/
+│   │   │   │       │   ├── route.ts          # POST: add member (user/guest/guest_new)
+│   │   │   │       │   └── [memberId]/route.ts # DELETE: remove member
+│   │   │   │       ├── expenses/route.ts     # GET: group-scoped expenses with myShare
+│   │   │   │       └── settlements/route.ts  # GET: list | POST: record settlement
+│   │   │   ├── expenses/
+│   │   │   │   ├── route.ts                  # POST: create expense + splits + activity
+│   │   │   │   └── [id]/route.ts             # DELETE: remove expense + splits + activity
+│   │   │   ├── balances/route.ts             # GET: net balance per friend (paise)
+│   │   │   ├── activity/route.ts             # GET: cursor-paginated activity feed
+│   │   │   ├── account/route.ts              # PATCH: update name + username
+│   │   │   └── guest-contacts/route.ts       # GET: list | POST: create guest contact
 │   │   ├── auth/
 │   │   │   ├── page.tsx          # Email + OTP multi-step form
 │   │   │   └── setup/
 │   │   │       └── page.tsx      # Onboarding — name + username
 │   │   ├── friends/
 │   │   │   └── page.tsx          # Friends list + inline add/search/remove
+│   │   ├── groups/
+│   │   │   ├── page.tsx          # Group list + "New group" create sheet
+│   │   │   └── [id]/
+│   │   │       └── page.tsx      # Group detail: balances, expenses, members, settle up
+│   │   ├── activity/
+│   │   │   └── page.tsx          # Cursor-paginated activity feed with event descriptions
 │   │   ├── dashboard/
-│   │   │   └── page.tsx          # Balance overview — owed/owing summary, recent activity
+│   │   │   └── page.tsx          # Balance overview — owed/owing summary, recent activity, groups
+│   │   ├── account/
+│   │   │   └── page.tsx          # Profile page — view/edit name + username, sign out
 │   │   ├── globals.css           # Global styles + Tailwind/shadcn CSS variables
 │   │   ├── layout.tsx            # Root layout — PWA meta, manifest link, font
 │   │   └── page.tsx              # Root route — redirects to /dashboard
 │   ├── components/
+│   │   ├── expenses/
+│   │   │   └── AddExpenseSheet.tsx  # Full-screen expense form; accepts optional groupId/groupMembers props
 │   │   ├── layout/
 │   │   │   ├── AppShell.tsx      # Authenticated page wrapper (Sidebar + BottomNav + main)
 │   │   │   ├── BottomNav.tsx     # Mobile bottom tab bar (5 tabs, client component)
@@ -118,7 +144,9 @@ hisaab/
 │   │   │   └── session.ts        # createSession(), getSessionUser(), deleteSession()
 │   │   ├── db/
 │   │   │   ├── index.ts          # Drizzle client + neon-http connection
-│   │   │   └── schema.ts         # users, otp_codes, sessions tables
+│   │   │   └── schema.ts         # All tables: users, sessions, otp_codes, friendships, guest_contacts,
+│   │   │                         #   expenses, expense_splits, groups, group_members, settlements, activity_log
+│   │   ├── activity.ts           # writeActivity() helper — fire-and-forget; never blocks response
 │   │   └── utils.ts              # cn() helper for conditional class merging
 │   └── middleware.ts             # Edge middleware — session validation + route guard
 ├── .env.example                  # Documented env vars (no real values)
@@ -161,15 +189,14 @@ The service worker (generated by next-pwa / Workbox) caches static assets and pa
 | `/` | Server | Done | Redirects to `/dashboard` |
 | `/auth` | Client | Done | Email entry + OTP verification (multi-step) |
 | `/auth/setup` | Client | Done | Onboarding — set display name + unique username |
-| `/dashboard` | Server | Dummy | Balance overview — owed/owing summary, recent activity |
+| `/dashboard` | Client | Done | Balance overview — owed/owing summary, recent activity, group list |
 | `/friends` | Client | Done | Friends list with inline search, add, and remove |
+| `/groups` | Client | Done | Group list; "New group" create sheet |
+| `/groups/[id]` | Client | Done | Group detail — member balances, expenses, members, settle up |
+| `/activity` | Client | Done | Cursor-paginated activity feed (expense, friend, settlement events) |
+| `/account` | Client | Done | Profile page — view/edit name + username, sign out |
 | `/friends/[username]` | Server | Planned | Friend detail — shared history and balances |
 | `/expenses` | Server | Planned | All expenses across all groups |
-| `/expenses/new` | Client | Planned | Add expense (group or non-group) |
-| `/expenses/[id]` | Server | Planned | Expense detail / edit / delete |
-| `/settle` | Client | Planned | Record a settlement between two people |
-| `/activity` | Server | Planned | Global audit feed |
-| `/account` | Client | Done | Profile page — view/edit name + username, sign out |
 | `/account/notifications` | Client | Planned | Notification preferences |
 | `/account/security` | Client | Planned | Password / sessions |
 
@@ -231,7 +258,7 @@ Schema implemented in `src/lib/db/schema.ts` (Drizzle ORM / Neon PostgreSQL).
 
 Guests are reusable across expenses. Deleting the owner cascades to all their guest contacts.
 
-### `expenses` (updated)
+### `expenses`
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | uuid PK | `gen_random_uuid()` |
@@ -239,6 +266,7 @@ Guests are reusable across expenses. Deleting the owner cascades to all their gu
 | `amount` | integer NOT NULL | Total in paise (₹1 = 100 paise) |
 | `paid_by_id` | uuid FK → users.id RESTRICT | Who paid the full bill |
 | `created_by_id` | uuid FK → users.id RESTRICT | Who created the record |
+| `group_id` | uuid FK → groups.id RESTRICT nullable | NULL for non-group expenses |
 | `date` | timestamptz NOT NULL | Date of the expense |
 | `created_at` | timestamptz | — |
 | `updated_at` | timestamptz | — |
@@ -258,11 +286,60 @@ Guests are reusable across expenses. Deleting the owner cascades to all their gu
 - Equal split: `floor(total/n)` per person; remainder paise go to the first participants.
 - Only the creator can delete an expense.
 
+### `groups`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `name` | text NOT NULL | Display name |
+| `created_by_id` | uuid FK → users.id RESTRICT | Creator; required for rename/delete permissions |
+| `created_at` | timestamptz | — |
+
+### `group_members`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | `gen_random_uuid()` — used as `memberId` in settlement requests |
+| `group_id` | uuid FK → groups.id CASCADE | — |
+| `user_id` | uuid FK → users.id RESTRICT nullable | App user member |
+| `guest_id` | uuid FK → guest_contacts.id RESTRICT nullable | Guest member |
+| `added_by_id` | uuid FK → users.id RESTRICT | Who added this member |
+| `joined_at` | timestamptz | — |
+
+**Check constraint:** `num_nulls(user_id, guest_id) = 1` — exactly one of user or guest must be set.
+
+### `settlements`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `group_id` | uuid FK → groups.id CASCADE nullable | NULL for non-group settlements |
+| `from_user_id` | uuid FK → users.id RESTRICT nullable | Payer (app user) |
+| `from_guest_id` | uuid FK → guest_contacts.id RESTRICT nullable | Payer (guest) |
+| `to_user_id` | uuid FK → users.id RESTRICT nullable | Recipient (app user) |
+| `to_guest_id` | uuid FK → guest_contacts.id RESTRICT nullable | Recipient (guest) |
+| `amount` | integer NOT NULL | Amount in paise |
+| `note` | text nullable | Optional memo |
+| `recorded_by_id` | uuid FK → users.id RESTRICT | Who recorded the settlement |
+| `created_at` | timestamptz | — |
+
+**Check constraints:** `num_nulls(from_user_id, from_guest_id) = 1` and `num_nulls(to_user_id, to_guest_id) = 1`.
+
+### `activity_log`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `type` | text NOT NULL | `expense_added` \| `expense_deleted` \| `friend_added` \| `friend_removed` \| `settlement_recorded` \| `group_created` \| `group_member_added` |
+| `actor_id` | uuid FK → users.id RESTRICT | User who performed the action |
+| `group_id` | uuid FK → groups.id CASCADE nullable | Set for group-scoped events |
+| `payload` | jsonb NOT NULL | Denormalized display data (description, amount, names, etc.) |
+| `visible_to_user_ids` | text[] NOT NULL DEFAULT '{}' | User IDs who can see this event; queried with `ANY()` |
+| `created_at` | timestamptz | — |
+
+**Visibility rule:** An event is visible if `actor_id = me OR me = ANY(visible_to_user_ids)`.
+
 ```
 Expense: id, groupId → Group | null, description, amount (paise), paidBy → User, splits → Split[], date, createdAt
-Split: id, expenseId → Expense, userId → User, type: equal|exact|percentage|shares, value, settledAt
-Settlement: id, fromUser → User, toUser → User, amount (paise), groupId → Group | null, date, createdAt
-Activity: id, type, actorId → User, targetId, payload JSON, createdAt
+Split: id, expenseId → Expense, userId → User, amount (paise), createdAt
+Settlement: id, fromUser → User | Guest, toUser → User | Guest, amount (paise), groupId → Group | null, note, recordedById, createdAt
+ActivityLog: id, type, actorId → User, groupId → Group | null, payload JSON, visibleToUserIds text[], createdAt
 ```
 
 > **Currency note:** All monetary values stored as integer paise (1 ₹ = 100 paise) to avoid floating-point rounding errors. Display layer converts to `₹X,XXX.XX`.
@@ -280,20 +357,25 @@ Activity: id, type, actorId → User, targetId, payload JSON, createdAt
 | `/api/auth/me` | GET | Return current user | Session |
 | `/api/auth/username-check` | GET | Check username availability | None |
 | `/api/friends` | GET | List all friends with profile data | Session |
-| `/api/friends` | POST | Add a friend by username or email | Session |
-| `/api/friends/[friendId]` | DELETE | Remove friendship (both rows) | Session |
+| `/api/friends` | POST | Add a friend by username or email; writes `friend_added` activity | Session |
+| `/api/friends/[friendId]` | DELETE | Remove friendship (both rows); writes `friend_removed` activity | Session |
 | `/api/users/search` | GET | Search users by username prefix or exact email | Session |
 | `/api/account` | PATCH | Update display name and username | Session |
-| `/api/groups` | POST | Create group | Session |
-| `/api/groups/[id]` | GET | Group detail | Session |
-| `/api/groups/[id]` | PATCH | Edit group | Session |
-| `/api/groups/[id]/expenses` | GET | List group expenses | Session |
+| `/api/groups` | GET | List groups current user belongs to, with `myBalance` per group | Session |
+| `/api/groups` | POST | Create group; auto-adds creator as first member | Session |
+| `/api/groups/[id]` | GET | Group detail: members + per-member pairwise balances | Session |
+| `/api/groups/[id]` | PATCH | Rename group (creator only) | Session |
+| `/api/groups/[id]/members` | POST | Add member (user/guest/guest_new) | Session |
+| `/api/groups/[id]/members/[memberId]` | DELETE | Remove member by group_members.id (creator only) | Session |
+| `/api/groups/[id]/expenses` | GET | Expenses scoped to this group, newest first, with `myShare` | Session |
+| `/api/groups/[id]/settlements` | GET | Settlements for this group | Session |
+| `/api/groups/[id]/settlements` | POST | Record settlement between two group members | Session |
+| `/api/expenses` | POST | Create expense with splits (equal or exact); writes `expense_added` activity | Session |
+| `/api/expenses/[id]` | DELETE | Delete expense + splits (creator only); writes `expense_deleted` activity | Session |
+| `/api/balances` | GET | Net paise balance per friend (positive = they owe you) | Session |
+| `/api/activity` | GET | Cursor-paginated activity feed (limit 20); visibility filtered | Session |
 | `/api/guest-contacts` | GET | List the current user's saved guest contacts | Session |
 | `/api/guest-contacts` | POST | Create a new guest contact (name + optional phone) | Session |
-| `/api/expenses` | POST | Create expense with splits (equal or exact) | Session |
-| `/api/expenses/[id]` | DELETE | Delete expense + splits (creator only, cascade) | Session |
-| `/api/balances` | GET | Net paise balance per friend (positive = they owe you) | Session |
-| `/api/activity` | GET | Activity feed | Session |
 
 ---
 
@@ -437,15 +519,17 @@ _Not yet configured._
 
 - [ ] Icon placeholders (`public/icons/icon-*.png`) are solid green squares — replace with real brand assets before any public release
 - [ ] Expired `otp_codes` rows accumulate — add a nightly cleanup job or Neon scheduled query to prune them
-- [ ] Session `expires_at` is not rolled forward on each request — implement lazy rolling (only refresh if within last 7 days of expiry) to limit DB writes
+- [ ] Session `expires_at` is not rolled forward on each request — implement lazy rolling (only within last 7 days of expiry) to limit DB writes
 - [ ] `shadcn` package listed as a runtime dependency in `package.json` — should be devDependency
 - [ ] `/api/auth/username-check` has no rate limiting — add IP-based rate limiting before public launch
 - [ ] `/api/users/search` has no rate limiting — add IP-based limit before public launch
 - [ ] Edit expense (PATCH /api/expenses/[id]) — deferred
-- [ ] Settlement recording (mark a debt as paid) — deferred
-- [ ] Group-context expenses (nullable `group_id` column) — deferred
-- [ ] Full `/expenses` list page (pagination, filters) — deferred
 - [ ] No friend detail page (`/friends/[username]`) — deferred
+- [ ] Group delete — deferred (currently no DELETE /api/groups/[id])
+- [ ] Full `/expenses` list page (pagination, filters) — deferred
+- [ ] `activity_log` rows accumulate indefinitely — add pruning strategy (e.g. keep last 90 days)
+- [ ] `expense_splits` only supports app users as split participants — guest splits stored via `guestBalances` in `/api/balances` but not in `expense_splits` table
+- [ ] Neon HTTP driver does not support transactions — sequential inserts in POST /api/expenses are not atomic; a mid-flight crash can leave orphaned splits
 
 ---
 
@@ -477,3 +561,4 @@ _Not yet configured._
 | 2026-05-28 | Implemented friends feature — friendships table (symmetric, composite PK), 3 API routes (list/add/remove + user search), /friends page with inline search and remove |
 | 2026-05-28 | Implemented account/profile page — PATCH /api/account, /account page with edit mode (name + username), read-only email, sign out |
 | 2026-05-28 | Full-screen mobile expense form + guest participants — guest_contacts table, Contact Picker API integration, guest payer support, Non-app debts dashboard section | — expenses + expense_splits tables, POST/GET /api/expenses, DELETE /api/expenses/[id], GET /api/balances, AddExpenseSheet bottom-sheet form (equal + exact splits), global FAB in AppShell, dashboard balance tiles + activity list wired to real data, friends page balances wired |
+| 2026-05-28 | Groups + Activity feed — groups/group_members/settlements/activity_log tables; 9 new API routes (groups CRUD, members, expenses, settlements, activity); /groups, /groups/[id], /activity pages; AddExpenseSheet updated with optional groupId/groupMembers props; dashboard Groups section wired; friend add/remove writes activity |

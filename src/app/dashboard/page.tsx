@@ -36,10 +36,13 @@ type Balances = {
   guestBalances: { guestId: string; name: string; phone: string | null; net: number }[];
 };
 
+type Group = { id: string; name: string; memberCount: number; myBalance: number };
+
 export default function DashboardPage() {
   const [user, setUser] = useState<{ id: string; name: string | null; username: string | null } | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [balances, setBalances] = useState<Balances>({ totalOwedToYou: 0, totalYouOwe: 0, netTotal: 0, guestBalances: [] });
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -52,11 +55,12 @@ export default function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [expRes, balRes] = await Promise.all([
+      const [expRes, balRes, grpRes] = await Promise.all([
         fetch("/api/expenses?limit=5"),
         fetch("/api/balances"),
+        fetch("/api/groups"),
       ]);
-      const [expData, balData] = await Promise.all([expRes.json(), balRes.json()]);
+      const [expData, balData, grpData] = await Promise.all([expRes.json(), balRes.json(), grpRes.json()]);
       setExpenses(expData.expenses ?? []);
       setBalances({
         totalOwedToYou: balData.totalOwedToYou ?? 0,
@@ -64,6 +68,7 @@ export default function DashboardPage() {
         netTotal: balData.netTotal ?? 0,
         guestBalances: balData.guestBalances ?? [],
       });
+      setGroups(grpData.groups ?? []);
     } catch {
       // leave state unchanged on network error
     } finally {
@@ -260,17 +265,52 @@ export default function DashboardPage() {
 
         {/* Groups */}
         <section>
-          <p className="text-[13px] font-medium text-muted-foreground tracking-[0.02em] uppercase mb-2 px-1">Groups</p>
+          <div className="flex items-center justify-between mb-2 px-1">
+            <p className="text-[13px] font-medium text-muted-foreground tracking-[0.02em] uppercase">Groups</p>
+            {groups.length > 0 && (
+              <Link href="/groups" className="text-[12px] font-light text-emerald-600 hover:text-emerald-700 transition-colors duration-150">View all</Link>
+            )}
+          </div>
           <div className="rounded-2xl bg-card border border-black/[0.06] overflow-hidden">
-            <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-                <Users className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
+            {loading ? (
+              <div className="flex justify-center py-10">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
-              <p className="text-[15px] font-light text-foreground mb-1">No groups yet</p>
-              <p className="text-[13px] font-light text-muted-foreground max-w-[220px] leading-relaxed">
-                Create a group to split expenses with friends or flatmates.
-              </p>
-            </div>
+            ) : groups.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                  <Users className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
+                </div>
+                <p className="text-[15px] font-light text-foreground mb-1">No groups yet</p>
+                <p className="text-[13px] font-light text-muted-foreground max-w-[220px] leading-relaxed">
+                  Create a group to split expenses with friends or flatmates.
+                </p>
+              </div>
+            ) : (
+              <>
+                {groups.slice(0, 3).map((g, i) => (
+                  <Link key={g.id} href={`/groups/${g.id}`} className={cn("flex items-center gap-3 px-4 py-3.5 hover:bg-black/[0.02] transition-colors duration-150", i > 0 && "border-t border-black/[0.06]")}>
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
+                      <span className="text-[14px] font-medium text-emerald-700">{g.name.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-light truncate">{g.name}</p>
+                      <p className="text-[12px] font-light text-muted-foreground">{g.memberCount} member{g.memberCount !== 1 ? "s" : ""}</p>
+                    </div>
+                    {g.myBalance !== 0 && (
+                      <p className={cn("text-[13px] font-light tabular-nums shrink-0", g.myBalance > 0 ? "text-emerald-600" : "text-rose-500")}>
+                        {g.myBalance > 0 ? "+" : "-"}₹{(Math.abs(g.myBalance) / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    )}
+                  </Link>
+                ))}
+                {groups.length > 3 && (
+                  <Link href="/groups" className="flex items-center justify-center py-3 border-t border-black/[0.06] text-[13px] font-light text-emerald-600 hover:text-emerald-700 hover:bg-black/[0.02] transition-colors duration-150">
+                    View all {groups.length} groups
+                  </Link>
+                )}
+              </>
+            )}
           </div>
         </section>
 

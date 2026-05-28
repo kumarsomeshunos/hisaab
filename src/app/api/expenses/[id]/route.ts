@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { expenses } from "@/lib/db/schema";
+import { expenses, expenseSplits } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
+import { writeActivity } from "@/lib/activity";
 
 export async function DELETE(
   request: NextRequest,
@@ -22,7 +23,7 @@ export async function DELETE(
     if (!parsed.success) return NextResponse.json({ error: "Invalid expense ID." }, { status: 400 });
 
     const [expense] = await db
-      .select({ id: expenses.id, createdById: expenses.createdById })
+      .select({ id: expenses.id, description: expenses.description, amount: expenses.amount, groupId: expenses.groupId, createdById: expenses.createdById })
       .from(expenses)
       .where(eq(expenses.id, parsed.data))
       .limit(1);
@@ -32,7 +33,22 @@ export async function DELETE(
       return NextResponse.json({ error: "Only the creator can delete this expense." }, { status: 403 });
     }
 
+    // Gather participant user IDs before deleting (for activity visibility)
+    const splitUserRows = await db
+      .select({ userId: expenseSplits.userId })
+      .from(expenseSplits)
+      .where(and(eq(expenseSplits.expenseId, parsed.data)));
+    const visibleTo = splitUserRows.map((r) => r.userId).filter(Boolean) as string[];
+
     await db.delete(expenses).where(and(eq(expenses.id, parsed.data), eq(expenses.createdById, user.id)));
+
+    await writeActivity({
+      type: "expense_deleted",
+      actorId: user.id,
+      groupId: expense.groupId ?? null,
+      payload: { expenseId: expense.id, description: expense.description, amount: expense.amount },
+      visibleToUserIds: visibleTo,
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

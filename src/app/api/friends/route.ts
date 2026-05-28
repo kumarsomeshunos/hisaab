@@ -4,6 +4,7 @@ import { eq, and, asc, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, friendships } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
+import { writeActivity } from "@/lib/activity";
 
 export async function GET(request: NextRequest) {
   try {
@@ -84,6 +85,13 @@ export async function POST(request: NextRequest) {
       { userId: user.id, friendId: target.id },
       { userId: target.id, friendId: user.id },
     ]);
+
+    await writeActivity({
+      type: "friend_added",
+      actorId: user.id,
+      payload: { friendId: target.id, friendName: target.name, friendUsername: target.username },
+      visibleToUserIds: [user.id, target.id],
+    });
 
     return NextResponse.json({ success: true, friend: target });
   } catch (err) {

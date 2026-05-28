@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { eq, or, inArray, desc, and, isNull, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, friendships, expenses, expenseSplits, guestContacts } from "@/lib/db/schema";
+import { users, friendships, expenses, expenseSplits, guestContacts, groups, groupMembers } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
+import { writeActivity } from "@/lib/activity";
 
 // Participant discriminated union
 const userParticipant = z.object({
@@ -35,6 +36,7 @@ const createSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   paidBy: paidBySchema,
   splitType: z.enum(["equal", "exact"]),
+  groupId: z.string().uuid().optional(),
   participants: z
     .array(z.discriminatedUnion("type", [userParticipant, guestParticipant, guestNewParticipant]))
     .min(2, "At least 2 participants required"),
@@ -58,12 +60,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { description, amount, date, paidBy, splitType, participants } = parsed.data;
+    const { description, amount, date, paidBy, splitType, groupId, participants } = parsed.data;
 
     // Current user must be a participant
     const hasCurrentUser = participants.some((p) => p.type === "user" && p.userId === user.id);
     if (!hasCurrentUser) {
       return NextResponse.json({ error: "You must be a participant." }, { status: 400 });
+    }
+
+    // Validate group membership if groupId provided
+    if (groupId) {
+      const [membership] = await db
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, user.id)));
+      if (!membership) return NextResponse.json({ error: "You are not a member of this group." }, { status: 403 });
     }
 
     const totalPaise = Math.round(amount * 100);
@@ -193,6 +204,7 @@ export async function POST(request: NextRequest) {
       .values({
         description,
         amount: totalPaise,
+        groupId: groupId ?? null,
         paidById: resolvedPaidById,
         paidByGuestId: resolvedPaidByGuestId,
         createdById: user.id,
@@ -214,6 +226,24 @@ export async function POST(request: NextRequest) {
     });
 
     await db.insert(expenseSplits).values(splitRows);
+
+    const participantUserIds = participants
+      .filter((p): p is z.infer<typeof userParticipant> => p.type === "user")
+      .map((p) => p.userId);
+
+    let groupName: string | undefined;
+    if (groupId) {
+      const [g] = await db.select({ name: groups.name }).from(groups).where(eq(groups.id, groupId));
+      groupName = g?.name;
+    }
+
+    await writeActivity({
+      type: "expense_added",
+      actorId: user.id,
+      groupId: groupId ?? null,
+      payload: { expenseId: expense.id, description, amount: totalPaise, groupName },
+      visibleToUserIds: participantUserIds,
+    });
 
     return NextResponse.json(
       { expense: { id: expense.id, description: expense.description, amount: expense.amount, date: expense.date } },

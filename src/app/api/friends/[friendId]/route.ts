@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq, or } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { friendships } from "@/lib/db/schema";
+import { friendships, users } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
+import { writeActivity } from "@/lib/activity";
 
 const paramSchema = z.string().uuid("Invalid friend ID.");
 
@@ -35,6 +36,12 @@ export async function DELETE(
       return NextResponse.json({ error: "Friend not found." }, { status: 404 });
     }
 
+    // Fetch friend name for activity payload before deleting
+    const [friend] = await db
+      .select({ name: users.name, username: users.username })
+      .from(users)
+      .where(eq(users.id, parsed.data));
+
     await db
       .delete(friendships)
       .where(
@@ -43,6 +50,13 @@ export async function DELETE(
           and(eq(friendships.userId, parsed.data), eq(friendships.friendId, user.id))
         )
       );
+
+    await writeActivity({
+      type: "friend_removed",
+      actorId: user.id,
+      payload: { friendId: parsed.data, friendName: friend?.name, friendUsername: friend?.username },
+      visibleToUserIds: [user.id, parsed.data],
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

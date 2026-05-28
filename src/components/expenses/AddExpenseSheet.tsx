@@ -71,19 +71,31 @@ interface AddExpenseSheetProps {
   currentUser: { id: string; name: string | null; username: string | null };
   onClose: () => void;
   onSaved: () => void;
+  groupId?: string;
+  groupName?: string;
+  groupMembers?: { type: "user" | "guest"; id: string; name: string | null; username?: string | null; phone?: string | null }[];
 }
 
-export function AddExpenseSheet({ currentUser, onClose, onSaved }: AddExpenseSheetProps) {
+export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupName, groupMembers: initialGroupMembers }: AddExpenseSheetProps) {
   // Form fields
   const [description, setDescription] = useState("");
   const [amountStr, setAmountStr] = useState("");
   const [dateStr, setDateStr] = useState(todayStr());
   const [splitType, setSplitType] = useState<SplitType>("equal");
 
-  // Participants — always starts with current user
-  const [participants, setParticipants] = useState<Participant[]>([
-    { kind: "user", id: currentUser.id, name: currentUser.name, username: currentUser.username, amountStr: "" },
-  ]);
+  // Participants — starts with current user (+ group members if provided)
+  const [participants, setParticipants] = useState<Participant[]>(() => {
+    const self: UserParticipant = { kind: "user", id: currentUser.id, name: currentUser.name, username: currentUser.username, amountStr: "" };
+    if (!initialGroupMembers) return [self];
+    const extras: Participant[] = initialGroupMembers
+      .filter((m) => !(m.type === "user" && m.id === currentUser.id))
+      .map((m) =>
+        m.type === "user"
+          ? { kind: "user", id: m.id, name: m.name, username: m.username ?? null, amountStr: "" } as UserParticipant
+          : { kind: "guest", localId: crypto.randomUUID(), guestId: m.id, name: m.name ?? "", phone: m.phone ?? null, amountStr: "" } as GuestParticipant
+      );
+    return [self, ...extras];
+  });
   const [paidByRef, setPaidByRef] = useState<PaidByRef>({ kind: "user", id: currentUser.id });
 
   // App friend search
@@ -232,6 +244,7 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved }: AddExpenseShe
         date: dateStr,
         paidBy: buildPaidBy(),
         splitType,
+        ...(groupId ? { groupId } : {}),
         participants: participants.map(buildParticipant),
       };
 
@@ -290,7 +303,10 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved }: AddExpenseShe
           >
             Cancel
           </button>
-          <span className="text-[17px] font-light tracking-[-0.02em]">Add expense</span>
+          <span className="text-[17px] font-light tracking-[-0.02em]">
+            Add expense
+            {groupName && <span className="block text-[12px] font-light text-muted-foreground tracking-normal">{groupName}</span>}
+          </span>
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}
