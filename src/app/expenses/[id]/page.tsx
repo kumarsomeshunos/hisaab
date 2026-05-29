@@ -312,7 +312,7 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
   const canUpload = (isParticipant || isCreator) && expense.media.length < MAX_ATTACHMENTS && !uploading;
   const cat = categoryDisplay(expense.category);
   const mySplit = currentUser ? expense.splits.find((s) => s.type === "user" && s.participantId === currentUser.id) : undefined;
-  const canSettle = !expense.groupId && mySplit?.settlementStatus === "pending" && expense.paidBy.type === "user" && expense.paidBy.id !== currentUser?.id;
+  const canSettle = mySplit?.settlementStatus === "pending" && expense.paidBy.type === "user" && expense.paidBy.id !== currentUser?.id;
 
   const imageItems = expense.media.filter((m) => m.mimeType !== "application/pdf");
   const pdfItems = expense.media.filter((m) => m.mimeType === "application/pdf");
@@ -516,7 +516,12 @@ export default function ExpenseDetailPage({ params }: { params: Promise<{ id: st
                     </p>
                     {split.username && !isSelf && <p className="text-[12px] text-muted-foreground">@{split.username}</p>}
                   </div>
-                  <p className="text-[14px] font-light tabular-nums shrink-0 mr-2">₹{formatPaise(split.amount)}</p>
+                  <p className={cn(
+                    "text-[14px] font-light tabular-nums shrink-0 mr-2",
+                    split.settlementStatus === "self" ? "text-emerald-600" :
+                    split.settlementStatus === "settled" ? "text-muted-foreground" :
+                    "text-rose-500"
+                  )}>₹{formatPaise(split.amount)}</p>
                   {split.settlementStatus === "self" ? null : split.settlementStatus === "settled" ? (
                     <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium shrink-0">
                       <Check className="h-3 w-3" strokeWidth={2.5} /> Settled

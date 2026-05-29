@@ -321,7 +321,10 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-[14px] font-light tabular-nums">₹{formatPaise(e.amount)}</p>
-                    <p className="text-[11px] font-light text-muted-foreground tabular-nums">your share ₹{formatPaise(e.myShare)}</p>
+                    <p className={cn(
+                      "text-[11px] font-light tabular-nums",
+                      e.isMine ? "text-emerald-600" : "text-rose-500"
+                    )}>your share ₹{formatPaise(e.myShare)}</p>
                   </div>
                 </Link>
               ))}

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, timestamp, integer, primaryKey, check, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, varchar, boolean, timestamp, integer, primaryKey, check, jsonb } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const users = pgTable("users", {
@@ -67,6 +67,8 @@ export const guestContacts = pgTable("guest_contacts", {
 export const groups = pgTable("groups", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
+  emoji: varchar("emoji", { length: 10 }),
+  description: text("description"),
   createdById: uuid("created_by_id")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),

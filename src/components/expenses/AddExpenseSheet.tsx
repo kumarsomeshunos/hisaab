@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Loader2, Check, BookUser, UserPlus, Plus, Minus } from "lucide-react";
+import { X, Loader2, Check, BookUser, UserPlus, Plus, Minus, Paperclip } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -155,8 +155,16 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
 
   // Submission
   const [submitting, setSubmitting] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { mutate } = useOfflineMutate();
+
+  // Media attachments
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ALLOWED_ATTACH_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf"]);
+  const MAX_ATTACH = 5;
 
   const titleRef = useRef<HTMLInputElement>(null);
   useEffect(() => { setTimeout(() => titleRef.current?.focus(), 150); }, []);
@@ -325,7 +333,24 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
 
       const rawValues: Record<string, string> | undefined = splitMode === "equal"
         ? undefined
-        : participants.reduce((acc, p) => { acc[participantKey(p)] = p.rawValue; return acc; }, {} as Record<string, string>);
+        : (() => {
+            const rv: Record<string, string> = {};
+            let guestNewIdx = 0;
+            for (const p of participants) {
+              // API expects: user:${userId}, guest:${realGuestId}, guest_new:${index}
+              // The internal participantKey uses localId for guests — must translate here.
+              let apiKey: string;
+              if (p.kind === "user") {
+                apiKey = `user:${p.id}`;
+              } else if (p.guestId) {
+                apiKey = `guest:${p.guestId}`;
+              } else {
+                apiKey = `guest_new:${guestNewIdx++}`;
+              }
+              rv[apiKey] = p.rawValue;
+            }
+            return rv;
+          })();
 
       const body = {
         title: title.trim(),
@@ -357,12 +382,43 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
         setError(data.error ?? "Something went wrong.");
         return;
       }
+
+      // Upload any pending media files
+      if (pendingFiles.length > 0) {
+        setSubmitting(false);
+        setUploadPhase(true);
+        const expenseId = editInitial?.id ?? data.expense?.id;
+        let uploadFailed = false;
+        if (expenseId) {
+          for (const file of pendingFiles) {
+            try {
+              const presignRes = await fetch(`/api/expenses/${expenseId}/media/presign`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ filename: file.name, mimeType: file.type, sizeBytes: file.size }),
+              });
+              if (!presignRes.ok) { uploadFailed = true; continue; }
+              const { uploadUrl, key } = await presignRes.json();
+              const putRes = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+              if (!putRes.ok) { uploadFailed = true; continue; }
+              await fetch(`/api/expenses/${expenseId}/media`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ key, mimeType: file.type, sizeBytes: file.size }),
+              });
+            } catch { uploadFailed = true; }
+          }
+        }
+        setUploadPhase(false);
+        if (uploadFailed) setError("Expense saved — some media failed to upload.");
+      }
+
       onSaved();
       onClose();
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, title, notes, amountStr, dateStr, paidByParticipant, splitMode, category, participants, groupId, editInitial, onSaved, onClose, mutate]);
+  }, [canSubmit, title, notes, amountStr, dateStr, paidByParticipant, splitMode, category, participants, groupId, editInitial, pendingFiles, onSaved, onClose, mutate]);
 
   // ── Filtered lists ─────────────────────────────────────────────────────────
 
@@ -401,10 +457,10 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
           </div>
           <button
             onClick={handleSubmit}
-            disabled={!canSubmit}
+            disabled={!canSubmit || uploadPhase}
             className="text-[15px] font-medium text-emerald-600 hover:text-emerald-700 disabled:opacity-40 transition-colors duration-150 min-w-[56px] text-right"
           >
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : "Save"}
+            {uploadPhase ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : submitting ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : "Save"}
           </button>
         </div>
 
@@ -474,6 +530,44 @@ export function AddExpenseSheet({ currentUser, onClose, onSaved, groupId, groupN
                   value={dateStr}
                   onChange={(e) => setDateStr(e.target.value)}
                   className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light focus-visible:ring-0 focus-visible:ring-offset-0"
+                />
+              </div>
+
+              {/* Attachments row */}
+              <div className="border-t border-black/[0.06] px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-[13px] font-light text-muted-foreground w-16 shrink-0">Attach</span>
+                  <div className="flex flex-1 flex-wrap gap-1.5 items-center">
+                    {pendingFiles.map((f, i) => (
+                      <span key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-[12px] font-light text-muted-foreground max-w-[120px]">
+                        <span className="truncate">{f.name}</span>
+                        <button onClick={() => setPendingFiles((prev) => prev.filter((_, idx) => idx !== i))} className="shrink-0 hover:text-foreground">
+                          <X className="h-3 w-3" strokeWidth={2} />
+                        </button>
+                      </span>
+                    ))}
+                    {pendingFiles.length < MAX_ATTACH && (
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-1 text-[13px] font-light text-muted-foreground hover:text-foreground transition-colors duration-150"
+                      >
+                        <Paperclip className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        {pendingFiles.length === 0 ? "Add files" : "More"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const selected = Array.from(e.target.files ?? []).filter((f) => ALLOWED_ATTACH_TYPES.has(f.type));
+                    setPendingFiles((prev) => [...prev, ...selected].slice(0, MAX_ATTACH));
+                    e.target.value = "";
+                  }}
                 />
               </div>
             </div>

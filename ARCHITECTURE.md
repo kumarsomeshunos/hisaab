@@ -101,7 +101,7 @@ hisaab/
 │   │   │   ├── groups/
 │   │   │   │   ├── route.ts                  # GET: list user's groups | POST: create group (+ initial members)
 │   │   │   │   └── [id]/
-│   │   │   │       ├── route.ts              # GET: group detail + member balances + upiId | PATCH: rename
+│   │   │   │       ├── route.ts              # GET: group detail + member balances + upiId | PATCH: edit name/emoji/description (creator only) | DELETE: delete group + all expenses (creator only; blocked if unsettled balances)
 │   │   │   │       ├── members/
 │   │   │   │       │   ├── route.ts          # POST: add member (user/guest/guest_new)
 │   │   │   │       │   └── [memberId]/route.ts # DELETE: remove member
@@ -376,8 +376,10 @@ Category key format: built-ins use their key string (e.g. `"food"`); custom cate
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | uuid PK | `gen_random_uuid()` |
-| `name` | text NOT NULL | Display name |
-| `created_by_id` | uuid FK → users.id RESTRICT | Creator; required for rename/delete permissions |
+| `name` | text NOT NULL | Display name (max 80 chars) |
+| `emoji` | varchar(10) nullable | Optional single emoji prefix for the group name |
+| `description` | text nullable | Optional description (max 300 chars) |
+| `created_by_id` | uuid FK → users.id RESTRICT | Creator; required for edit/delete permissions |
 | `created_at` | timestamptz | — |
 
 ### `group_members`
@@ -683,7 +685,6 @@ _Not yet configured._
 - [ ] `/api/auth/username-check` has no rate limiting — add IP-based rate limiting before public launch
 - [ ] `/api/users/search` has no rate limiting — add IP-based limit before public launch
 - [ ] `computeSplits()` is duplicated in `expenses/route.ts` and `expenses/[id]/route.ts` — refactor into a shared util if a third callsite appears
-- [ ] Group delete — deferred (currently no DELETE /api/groups/[id])
 - [ ] `activity_log` rows accumulate indefinitely — add pruning strategy (e.g. keep last 90 days)
 - [ ] Neon HTTP driver does not support transactions — sequential inserts in POST /api/expenses are not atomic; a mid-flight crash can leave orphaned splits
 - [ ] Expense edit (PATCH /api/expenses/[id]) is implemented but the AddExpenseSheet edit entrypoint on /expenses/[id] is not yet wired up
@@ -729,3 +730,4 @@ _Not yet configured._
 | 2026-05-29 | Add Vercel Analytics (@vercel/analytics); scrub leaked DATABASE_URL + RESEND_API_KEY from .env.example and full git history via git filter-repo |
 | 2026-05-29 | Security hardening — HTTP security headers (CSP/HSTS/X-Frame-Options/etc.) via next.config.ts; session token hashing (SHA-256 stored in DB, raw token in cookie only); IP-based rate limiting on auth + search endpoints; auth required on username-check; tightened middleware static bypass to explicit allowlist; OTP removed from email subject; stale starter SVGs deleted |
 | 2026-05-29 | Open source release — LICENSE (MIT), README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, CHANGELOG.md, .github/ (issue templates, PR template, CI workflow); package.json metadata updated |
+| 2026-05-29 | Round 7 feature + fix batch — opaque nav bars; guest split rawValues key mismatch fixed; settle-up unblocked on group expenses (!groupId guard removed); money direction coloring (emerald=owed, rose=owing) on expense splits, group expense list, friend expense list; non-friend user search in group creation step 2; media attachments in AddExpenseSheet (seamless: POST expense → presign → PUT R2 → confirm → close); group CRUD (emoji + description columns added to groups table; PATCH/DELETE /api/groups/[id]; edit sheet + delete flow in group detail page; emoji/description fields in group creation) |

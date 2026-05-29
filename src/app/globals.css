@@ -138,11 +138,9 @@
 }
 
 @layer utilities {
-  /* iOS-style frosted glass — used on headers and bottom nav */
+  /* Opaque white — used on headers and bottom nav */
   .glass {
-    background-color: oklch(1 0 0 / 72%);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background-color: oklch(1 0 0);
   }
   .glass-dark {
     background-color: oklch(0.09 0 0 / 75%);

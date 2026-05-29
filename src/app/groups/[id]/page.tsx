@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, use } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AddExpenseSheet } from "@/components/expenses/AddExpenseSheet";
 import {
-  ArrowLeft, Receipt, Users, UserPlus, UserMinus, Loader2, Trash2, BookUser, X, Plus, ExternalLink, Handshake
+  ArrowLeft, Receipt, Users, UserPlus, UserMinus, Loader2, Trash2, BookUser, X, Plus, ExternalLink, Handshake, Pencil
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type ActivityEvent, describeEvent, eventHref, relativeTime } from "@/lib/activity-utils";
@@ -49,7 +50,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const { id: groupId } = use(params);
 
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string | null; username: string | null } | null>(null);
-  const [group, setGroup] = useState<{ id: string; name: string; createdById: string } | null>(null);
+  const [group, setGroup] = useState<{ id: string; name: string; emoji: string | null; description: string | null; createdById: string } | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [groupExpenses, setGroupExpenses] = useState<GroupExpense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +61,16 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [settleAmount, setSettleAmount] = useState("");
   const [settleNote, setSettleNote] = useState("");
   const [settling, setSettling] = useState(false);
+
+  // Edit/delete group state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editEmoji, setEditEmoji] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [actNextCursor, setActNextCursor] = useState<string | null>(null);
@@ -72,6 +83,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
   const [memberQuery, setMemberQuery] = useState("");
   const [manualGuestName, setManualGuestName] = useState("");
   const [addingMember, setAddingMember] = useState(false);
+  const router = useRouter();
   const { mutate } = useOfflineMutate();
 
   useEffect(() => {
@@ -156,6 +168,44 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
     fetchGroup();
   }, [groupId, fetchGroup, mutate]);
 
+  const handleSaveGroup = useCallback(async () => {
+    if (!editName.trim() || saving) return;
+    setSaving(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/groups/${groupId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName.trim(), emoji: editEmoji.trim() || null, description: editDescription.trim() || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setEditError(data.error ?? "Failed to save."); return; }
+      setGroup((prev) => prev ? { ...prev, name: editName.trim(), emoji: editEmoji.trim() || null, description: editDescription.trim() || null } : prev);
+      setEditOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  }, [groupId, editName, editEmoji, editDescription, saving]);
+
+  const handleDeleteGroup = useCallback(async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setEditError(null);
+    const res = await fetch(`/api/groups/${groupId}`, { method: "DELETE" });
+    if (res.status === 400) {
+      const data = await res.json();
+      setEditError(data.error ?? "Cannot delete group.");
+      setDeleting(false);
+      return;
+    }
+    if (!res.ok) {
+      setEditError("Failed to delete group.");
+      setDeleting(false);
+      return;
+    }
+    router.push("/groups");
+  }, [groupId, deleting, router]);
+
   const handleSettle = useCallback(async () => {
     if (!settleOpen || !settleAmount || settling) return;
     setSettling(true);
@@ -235,12 +285,27 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
           <Link href="/groups" className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-black/[0.05] transition-colors duration-150">
             <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
           </Link>
-          <h1 className="flex-1 text-[17px] font-light tracking-[-0.02em] truncate">{group.name}</h1>
+          <h1 className="flex-1 text-[17px] font-light tracking-[-0.02em] truncate">
+            {group.emoji ? `${group.emoji} ${group.name}` : group.name}
+          </h1>
+          {currentUser && group.createdById === currentUser.id && (
+            <button
+              onClick={() => { setEditName(group.name); setEditEmoji(group.emoji ?? ""); setEditDescription(group.description ?? ""); setDeleteConfirm(false); setEditError(null); setEditOpen(true); }}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-black/[0.05] transition-colors duration-150"
+              aria-label="Edit group"
+            >
+              <Pencil className="h-4 w-4" strokeWidth={1.5} />
+            </button>
+          )}
           <span className="text-[12px] font-light text-muted-foreground shrink-0">{members.length} member{members.length !== 1 ? "s" : ""}</span>
         </div>
       </header>
 
       <div className="px-4 py-6 md:px-6 md:py-8 space-y-8 max-w-2xl mx-auto w-full">
+
+        {group.description && (
+          <p className="text-[14px] font-light text-muted-foreground -mt-2 px-1">{group.description}</p>
+        )}
 
         {/* BALANCES */}
         <section>
@@ -364,7 +429,10 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-[14px] font-light tabular-nums">₹{formatPaise(e.amount)}</p>
-                      <p className="text-[11px] font-light text-muted-foreground tabular-nums">your share ₹{formatPaise(e.myShare)}</p>
+                      <p className={cn(
+                        "text-[11px] font-light tabular-nums",
+                        e.paidBy.type === "user" && e.paidBy.id === currentUser?.id ? "text-emerald-600" : "text-rose-500"
+                      )}>your share ₹{formatPaise(e.myShare)}</p>
                     </div>
                   </Link>
                   {isMyExpense && (
@@ -692,6 +760,98 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                   Pay via UPI
                 </a>
               )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Edit group sheet */}
+      {editOpen && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setEditOpen(false)} />
+          <div className="fixed inset-0 z-50 flex flex-col bg-background md:inset-auto md:top-6 md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:w-[480px] md:rounded-2xl md:shadow-[0_8px_40px_rgba(0,0,0,0.16)]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-black/[0.06] shrink-0 md:rounded-t-2xl">
+              <button onClick={() => setEditOpen(false)} className="text-[15px] font-light text-muted-foreground hover:text-foreground transition-colors duration-150 min-w-[56px]">Cancel</button>
+              <span className="text-[17px] font-light">Edit group</span>
+              <button
+                onClick={handleSaveGroup}
+                disabled={!editName.trim() || saving}
+                className="text-[15px] font-medium text-emerald-600 hover:text-emerald-700 disabled:opacity-40 transition-colors duration-150 min-w-[56px] text-right"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : "Save"}
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 px-4 py-5 space-y-4 pb-10">
+              <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06]">
+                  <label className="text-[13px] font-light text-muted-foreground w-20 shrink-0">Name</label>
+                  <Input
+                    autoFocus
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    maxLength={80}
+                    placeholder="Group name"
+                    className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                </div>
+                <div className="flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06]">
+                  <label className="text-[13px] font-light text-muted-foreground w-20 shrink-0">Emoji</label>
+                  <Input
+                    type="text"
+                    value={editEmoji}
+                    onChange={(e) => setEditEmoji(e.target.value)}
+                    maxLength={10}
+                    placeholder="🏖️"
+                    className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                </div>
+                <div className="flex items-start gap-3 px-4 py-3.5">
+                  <label className="text-[13px] font-light text-muted-foreground w-20 shrink-0 pt-0.5">About</label>
+                  <textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    maxLength={300}
+                    rows={3}
+                    placeholder="What's this group for?"
+                    className="flex-1 bg-transparent text-[15px] font-light resize-none border-0 p-0 outline-none placeholder:text-muted-foreground/40 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {editError && (
+                <p className="text-[13px] font-light text-rose-500 px-1">{editError}</p>
+              )}
+
+              <div className="border-t border-black/[0.06] pt-4">
+                {!deleteConfirm ? (
+                  <button
+                    onClick={() => setDeleteConfirm(true)}
+                    className="w-full py-3 text-[15px] font-light text-rose-500 hover:bg-rose-50 rounded-2xl transition-colors duration-150"
+                  >
+                    Delete group
+                  </button>
+                ) : (
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-4 space-y-3">
+                    <p className="text-[13px] font-light text-rose-600 text-center">This will permanently delete the group and all its expenses.</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setDeleteConfirm(false)}
+                        className="flex-1 py-2 rounded-xl bg-white text-[14px] font-light text-muted-foreground border border-black/[0.08] hover:bg-black/[0.02] transition-colors duration-150"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleDeleteGroup}
+                        disabled={deleting}
+                        className="flex-1 py-2 rounded-xl bg-rose-500 text-[14px] font-medium text-white hover:bg-rose-600 disabled:opacity-60 transition-colors duration-150 flex items-center justify-center"
+                      >
+                        {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm delete"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </>

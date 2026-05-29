@@ -14,6 +14,8 @@ const memberGuestSchema = z.object({
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(80),
+  emoji: z.string().max(10).optional().nullable(),
+  description: z.string().max(300).optional().nullable(),
   memberUserIds: z.array(z.string().uuid()).optional(),
   memberGuests: z.array(memberGuestSchema).optional(),
 });
@@ -120,11 +122,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input." }, { status: 400 });
     }
 
-    const { name, memberUserIds, memberGuests } = parsed.data;
+    const { name, emoji, description, memberUserIds, memberGuests } = parsed.data;
 
     const [group] = await db
       .insert(groups)
-      .values({ name, createdById: me })
+      .values({ name, emoji: emoji ?? null, description: description ?? null, createdById: me })
       .returning();
 
     await db.insert(groupMembers).values({ groupId: group.id, userId: me, addedById: me });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -32,6 +32,8 @@ export default function GroupsPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
   const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupEmoji, setNewGroupEmoji] = useState("");
+  const [newGroupDescription, setNewGroupDescription] = useState("");
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,9 @@ export default function GroupsPage() {
   const [friendQuery, setFriendQuery] = useState("");
   const [guestQuery, setGuestQuery] = useState("");
   const [manualGuestName, setManualGuestName] = useState("");
+  const [userSearchResults, setUserSearchResults] = useState<AppFriend[]>([]);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
+  const userSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchGroups = useCallback(async () => {
     try {
@@ -60,6 +65,8 @@ export default function GroupsPage() {
   const openSheet = useCallback(() => {
     setStep(1);
     setNewGroupName("");
+    setNewGroupEmoji("");
+    setNewGroupDescription("");
     setPendingMembers([]);
     setFriendQuery("");
     setGuestQuery("");
@@ -87,12 +94,31 @@ export default function GroupsPage() {
       .catch(() => {});
   }, [newGroupName]);
 
+  // Debounced non-friend user search
+  useEffect(() => {
+    if (step !== 2) return;
+    if (userSearchTimer.current) clearTimeout(userSearchTimer.current);
+    const q = friendQuery.trim();
+    if (q.length < 2) { setUserSearchResults([]); return; }
+    userSearchTimer.current = setTimeout(async () => {
+      setUserSearchLoading(true);
+      try {
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        setUserSearchResults(data.users ?? []);
+      } catch { /* leave unchanged */ } finally {
+        setUserSearchLoading(false);
+      }
+    }, 300);
+  }, [friendQuery, step]);
+
   const addFriend = useCallback((f: AppFriend) => {
     setPendingMembers((prev) => {
       if (prev.some((m) => m.type === "user" && m.id === f.id)) return prev;
       return [...prev, { type: "user", id: f.id, name: f.name, username: f.username }];
     });
     setFriendQuery("");
+    setUserSearchResults([]);
   }, []);
 
   const addGuest = useCallback((name: string, phone: string | null, guestId: string | null = null) => {
@@ -114,6 +140,8 @@ export default function GroupsPage() {
         .map((m) => ({ ...(m.guestId ? { guestId: m.guestId } : {}), name: m.name, ...(m.phone ? { phone: m.phone } : {}) }));
 
       const body: Record<string, unknown> = { name: newGroupName.trim() };
+      if (newGroupEmoji.trim()) body.emoji = newGroupEmoji.trim();
+      if (newGroupDescription.trim()) body.description = newGroupDescription.trim();
       if (memberUserIds.length > 0) body.memberUserIds = memberUserIds;
       if (memberGuests.length > 0) body.memberGuests = memberGuests;
 
@@ -126,7 +154,7 @@ export default function GroupsPage() {
     } finally {
       setCreating(false);
     }
-  }, [newGroupName, creating, pendingMembers, fetchGroups, mutate]);
+  }, [newGroupName, newGroupEmoji, newGroupDescription, creating, pendingMembers, fetchGroups, mutate]);
 
   const addedUserIds = new Set(pendingMembers.filter((m) => m.type === "user").map((m) => (m as Extract<PendingMember, { type: "user" }>).id));
   const addedGuestIds = new Set(
@@ -142,6 +170,9 @@ export default function GroupsPage() {
          (f.username ?? "").toLowerCase().includes(friendQuery.toLowerCase()))
       )
     : [];
+
+  const friendIdSet = new Set(allFriends.map((f) => f.id));
+  const nonFriendResults = userSearchResults.filter((u) => !addedUserIds.has(u.id) && !friendIdSet.has(u.id));
 
   const filteredSavedGuests = savedGuests.filter(
     (g) => !addedGuestIds.has(g.id) && (guestQuery.trim() === "" || g.name.toLowerCase().includes(guestQuery.toLowerCase()))
@@ -251,55 +282,105 @@ export default function GroupsPage() {
 
             {/* Step 1: Name */}
             {step === 1 && (
-              <div className="px-4 py-5">
-                <div className="rounded-2xl border border-black/[0.06] bg-card px-4 py-3.5">
-                  <Input
-                    autoFocus
-                    type="text"
-                    value={newGroupName}
-                    onChange={(e) => setNewGroupName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && newGroupName.trim() && goToStep2()}
-                    placeholder="Group name (e.g. Goa Trip)"
-                    maxLength={80}
-                    className="h-8 border-0 bg-transparent p-0 text-[15px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
-                  />
+              <div className="px-4 py-5 space-y-3">
+                <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
+                  <div className="flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06]">
+                    <label className="text-[13px] font-light text-muted-foreground w-20 shrink-0">Name</label>
+                    <Input
+                      autoFocus
+                      type="text"
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && newGroupName.trim() && goToStep2()}
+                      placeholder="Goa Trip"
+                      maxLength={80}
+                      className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.06]">
+                    <label className="text-[13px] font-light text-muted-foreground w-20 shrink-0">Emoji</label>
+                    <Input
+                      type="text"
+                      value={newGroupEmoji}
+                      onChange={(e) => setNewGroupEmoji(e.target.value)}
+                      maxLength={10}
+                      placeholder="🏖️"
+                      className="h-8 flex-1 border-0 bg-transparent p-0 text-[15px] font-light placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                  </div>
+                  <div className="flex items-start gap-3 px-4 py-3.5">
+                    <label className="text-[13px] font-light text-muted-foreground w-20 shrink-0 pt-0.5">About</label>
+                    <textarea
+                      value={newGroupDescription}
+                      onChange={(e) => setNewGroupDescription(e.target.value)}
+                      maxLength={300}
+                      rows={3}
+                      placeholder="What's this group for?"
+                      className="flex-1 bg-transparent text-[15px] font-light resize-none border-0 p-0 outline-none placeholder:text-muted-foreground/40 focus:outline-none"
+                    />
+                  </div>
                 </div>
-                <p className="mt-3 text-center text-[13px] font-light text-muted-foreground">You can add members in the next step</p>
+                <p className="text-center text-[13px] font-light text-muted-foreground">You can add members in the next step</p>
               </div>
             )}
 
             {/* Step 2: Members */}
             {step === 2 && (
               <div className="overflow-y-auto flex-1 px-4 py-5 space-y-4 pb-8">
-                {/* Friend search */}
+                {/* User search (friends + anyone) */}
                 <div className="relative">
                   <Input
                     autoFocus
                     type="text"
-                    placeholder="Search friends…"
+                    placeholder="Search users…"
                     value={friendQuery}
                     onChange={(e) => setFriendQuery(e.target.value)}
                     className="h-10 rounded-xl border-black/[0.1] bg-white pl-4 pr-10 text-[14px] font-light placeholder:text-muted-foreground/50 focus-visible:ring-emerald-500/25 focus-visible:border-emerald-400"
                   />
-                  {friendsLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
+                  {(friendsLoading || userSearchLoading) && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
                 </div>
 
                 {friendResults.length > 0 && (
-                  <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
-                    {friendResults.map((f, i) => (
-                      <div key={f.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
-                        <Avatar className="h-8 w-8 shrink-0">
-                          <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[12px] font-medium">
-                            {(f.name ?? f.username ?? "?").charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[14px] font-light truncate">{f.name ?? f.username}</p>
-                          {f.username && <p className="text-[12px] text-muted-foreground font-light">@{f.username}</p>}
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1">Friends</p>
+                    <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
+                      {friendResults.map((f, i) => (
+                        <div key={f.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
+                          <Avatar className="h-8 w-8 shrink-0">
+                            <AvatarFallback className="bg-emerald-500/15 text-emerald-700 text-[12px] font-medium">
+                              {(f.name ?? f.username ?? "?").charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[14px] font-light truncate">{f.name ?? f.username}</p>
+                            {f.username && <p className="text-[12px] text-muted-foreground font-light">@{f.username}</p>}
+                          </div>
+                          <Button size="sm" onClick={() => addFriend(f)} className="h-7 px-3 rounded-lg bg-emerald-500 text-white text-[12px] font-medium hover:bg-emerald-600">Add</Button>
                         </div>
-                        <Button size="sm" onClick={() => addFriend(f)} className="h-7 px-3 rounded-lg bg-emerald-500 text-white text-[12px] font-medium hover:bg-emerald-600">Add</Button>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {nonFriendResults.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1">Other users</p>
+                    <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
+                      {nonFriendResults.map((u, i) => (
+                        <div key={u.id} className={cn("flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-black/[0.06]")}>
+                          <Avatar className="h-8 w-8 shrink-0">
+                            <AvatarFallback className="bg-zinc-200 text-zinc-600 text-[12px] font-medium">
+                              {(u.name ?? u.username ?? "?").charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[14px] font-light truncate">{u.name ?? u.username}</p>
+                            {u.username && <p className="text-[12px] text-muted-foreground font-light">@{u.username}</p>}
+                          </div>
+                          <Button size="sm" onClick={() => addFriend(u)} className="h-7 px-3 rounded-lg bg-zinc-100 text-zinc-700 text-[12px] font-medium hover:bg-zinc-200 border-0">Add</Button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
