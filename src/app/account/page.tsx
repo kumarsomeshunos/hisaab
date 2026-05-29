@@ -20,6 +20,7 @@ type UserProfile = {
   avatarUrl: string | null;
   upiId: string | null;
   phone: string | null;
+  notificationEmails: boolean;
 };
 
 const EMOJI_OPTIONS = ["😊","😎","🤑","🙈","🦊","🐼","🐸","🦄","🌸","⭐","🍕","🍦","🎉","✈️","🏖️","⚽","🎵","📚","💼","🏠","🌈","❤️","🔥","💎","🎯"];
@@ -47,6 +48,7 @@ export default function AccountPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [togglingNotifications, setTogglingNotifications] = useState(false);
 
   const [savedGuests, setSavedGuests] = useState<{ id: string; name: string; phone: string | null; upiId: string | null; email: string | null }[]>([]);
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
@@ -139,6 +141,24 @@ export default function AccountPage() {
       setSaving(false);
     }
   }, [user, name, username, upiId, avatar, phone, mutate]);
+
+  const handleToggleNotifications = useCallback(async () => {
+    if (!user || togglingNotifications) return;
+    const next = !user.notificationEmails;
+    setUser((u) => u ? { ...u, notificationEmails: next } : u);
+    setTogglingNotifications(true);
+    try {
+      await fetch("/api/account", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: user.name ?? "", username: user.username ?? "", notificationEmails: next }),
+      });
+    } catch {
+      setUser((u) => u ? { ...u, notificationEmails: !next } : u);
+    } finally {
+      setTogglingNotifications(false);
+    }
+  }, [user, togglingNotifications]);
 
   const handleSignOut = useCallback(async () => {
     setSigningOut(true);
@@ -490,6 +510,37 @@ export default function AccountPage() {
                       )}
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Notifications */}
+            {!editing && (
+              <div className="space-y-1">
+                <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground px-1 pb-1">Notifications</p>
+                <div className="rounded-2xl border border-black/[0.06] bg-card overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3.5">
+                    <div className="flex-1 min-w-0 pr-4">
+                      <p className="text-[15px] font-light">Expense emails</p>
+                      <p className="text-[12px] text-muted-foreground font-light leading-snug mt-0.5">Get emailed when you&apos;re added to an expense or when expenses you&apos;re part of change</p>
+                    </div>
+                    <button
+                      onClick={handleToggleNotifications}
+                      disabled={togglingNotifications}
+                      aria-label={user?.notificationEmails ? "Disable expense emails" : "Enable expense emails"}
+                      className={cn(
+                        "relative inline-flex h-[30px] w-[52px] shrink-0 items-center rounded-full transition-colors duration-200 focus-visible:outline-none disabled:opacity-50",
+                        user?.notificationEmails ? "bg-emerald-500" : "bg-black/10"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-[26px] w-[26px] rounded-full bg-white shadow-sm transition-transform duration-200",
+                          user?.notificationEmails ? "translate-x-[24px]" : "translate-x-[2px]"
+                        )}
+                      />
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

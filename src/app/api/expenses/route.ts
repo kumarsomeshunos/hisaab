@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { users, friendships, expenses, expenseSplits, guestContacts, groups, groupMembers, settlements } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { writeActivity } from "@/lib/activity";
+import { notifyExpenseParticipants } from "@/lib/email/notifications";
 
 // ---------- Split computation ----------
 
@@ -326,6 +327,8 @@ export async function POST(request: NextRequest) {
       payload: { expenseId: expense.id, title, amount: totalPaise, groupName, actorName: user.name ?? user.username ?? null },
       visibleToUserIds: participantUserIds,
     });
+
+    notifyExpenseParticipants({ type: "created", expenseId: expense.id, actorId: user.id, actorName: user.name ?? user.username ?? "Someone" }).catch(() => {});
 
     return NextResponse.json(
       { expense: { id: expense.id, title: expense.title, amount: expense.amount, date: expense.date } },

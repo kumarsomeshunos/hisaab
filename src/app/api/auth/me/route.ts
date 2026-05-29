@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
         avatarUrl: user.avatarUrl,
         phone: user.phone,
         isOnboarded: user.isOnboarded,
+        notificationEmails: user.notificationEmails,
       },
     });
   } catch (err) {

@@ -25,6 +25,7 @@ const schema = z.object({
     .regex(/^(\+91)?[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number.")
     .optional()
     .nullable(),
+  notificationEmails: z.boolean().optional(),
 });
 
 export async function PATCH(request: NextRequest) {
@@ -45,7 +46,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { name, username, upiId, avatar, phone } = parsed.data;
+    const { name, username, upiId, avatar, phone, notificationEmails } = parsed.data;
 
     // Username uniqueness — exclude current user so they can keep their own
     const taken = await db
@@ -70,6 +71,7 @@ export async function PATCH(request: NextRequest) {
         ...(resolvedUpiId !== undefined ? { upiId: resolvedUpiId } : {}),
         ...(resolvedAvatar !== undefined ? { avatarUrl: resolvedAvatar } : {}),
         ...(resolvedPhone !== undefined ? { phone: resolvedPhone } : {}),
+        ...(notificationEmails !== undefined ? { notificationEmails } : {}),
         updatedAt: new Date(),
       })
       .where(eq(users.id, user.id));

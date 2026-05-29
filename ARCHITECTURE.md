@@ -181,6 +181,10 @@ hisaab/
 │   │   │   └── hooks.ts          # useOnlineStatus, useOfflineMutate, useSyncManager
 │   │   ├── categories.ts         # DEFAULT_CATEGORIES (12 built-ins) + resolveCategory() helper
 │   │   ├── activity.ts           # writeActivity() helper — fire-and-forget; never blocks response
+│   │   ├── email/
+│   │   │   ├── notifications.ts  # notifyExpenseParticipants() — fire-and-forget; queries DB + sends via Resend batch
+│   │   │   └── templates/
+│   │   │       └── expense.ts    # buildExpenseEmailHtml() + buildExpenseEmailSubject() — inline HTML template
 │   │   ├── r2.ts                 # Cloudflare R2 S3Client, R2_BUCKET, R2_PUBLIC_URL
 │   │   └── utils.ts              # cn() helper for conditional class merging
 │   ├── worker/
@@ -256,6 +260,7 @@ Schema implemented in `src/lib/db/schema.ts` (Drizzle ORM / Neon PostgreSQL).
 | `upi_id` | text nullable | UPI payment address (max 50 chars, must contain `@`) |
 | `phone` | text nullable | Indian mobile number (10 digits, optionally with +91 prefix) |
 | `is_onboarded` | bool DEFAULT false | True after name + username set |
+| `notification_emails` | bool DEFAULT true | Whether to send expense notification emails |
 | `created_at` | timestamptz | — |
 | `updated_at` | timestamptz | — |
 
@@ -731,3 +736,4 @@ _Not yet configured._
 | 2026-05-29 | Security hardening — HTTP security headers (CSP/HSTS/X-Frame-Options/etc.) via next.config.ts; session token hashing (SHA-256 stored in DB, raw token in cookie only); IP-based rate limiting on auth + search endpoints; auth required on username-check; tightened middleware static bypass to explicit allowlist; OTP removed from email subject; stale starter SVGs deleted |
 | 2026-05-29 | Open source release — LICENSE (MIT), README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, CHANGELOG.md, .github/ (issue templates, PR template, CI workflow); package.json metadata updated |
 | 2026-05-29 | Round 7 feature + fix batch — opaque nav bars; guest split rawValues key mismatch fixed; settle-up unblocked on group expenses (!groupId guard removed); money direction coloring (emerald=owed, rose=owing) on expense splits, group expense list, friend expense list; non-friend user search in group creation step 2; media attachments in AddExpenseSheet (seamless: POST expense → presign → PUT R2 → confirm → close); group CRUD (emoji + description columns added to groups table; PATCH/DELETE /api/groups/[id]; edit sheet + delete flow in group detail page; emoji/description fields in group creation) |
+| 2026-05-29 | Email notifications — expense created/edited/deleted triggers Resend batch email to all split participants; notificationEmails opt-out toggle on users table + account page UI; fire-and-forget pattern (never blocks response); dev console fallback when RESEND_API_KEY unset |

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { users, expenses, expenseSplits, guestContacts, groups, settlements, expenseComments, friendships, expenseMedia } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { writeActivity } from "@/lib/activity";
+import { notifyExpenseParticipants } from "@/lib/email/notifications";
 import { R2_PUBLIC_URL } from "@/lib/r2";
 
 // ---------- Shared split helper (duplicated from route.ts to avoid a shared import cycle) ----------
@@ -544,6 +545,8 @@ export async function PATCH(
       visibleToUserIds: participantUserIds,
     });
 
+    notifyExpenseParticipants({ type: "edited", expenseId: id, actorId: user.id, actorName: user.name ?? user.username ?? "Someone" }).catch(() => {});
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[expenses/[id]/PATCH] Unexpected error:", err);
@@ -585,6 +588,8 @@ export async function DELETE(
       .from(expenseSplits)
       .where(eq(expenseSplits.expenseId, parsed.data));
     const visibleTo = splitUserRows.map((r) => r.userId).filter(Boolean) as string[];
+
+    await notifyExpenseParticipants({ type: "deleted", expenseId: parsed.data, actorId: user.id, actorName: user.name ?? user.username ?? "Someone" }).catch(() => {});
 
     await db.delete(expenses).where(and(eq(expenses.id, parsed.data), eq(expenses.createdById, user.id)));
 

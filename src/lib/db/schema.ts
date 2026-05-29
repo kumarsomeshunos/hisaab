@@ -10,6 +10,7 @@ export const users = pgTable("users", {
   upiId: text("upi_id"),
   phone: text("phone"),
   isOnboarded: boolean("is_onboarded").default(false).notNull(),
+  notificationEmails: boolean("notification_emails").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
