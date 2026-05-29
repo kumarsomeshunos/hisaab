@@ -459,7 +459,7 @@ export async function GET(request: NextRequest) {
       paidBy: r.paidById
         ? { type: "user" as const, id: r.paidById, name: r.paidByName, username: r.paidByUsername }
         : { type: "guest" as const, id: r.paidByGuestId!, name: guestPayerMap.get(r.paidByGuestId!) ?? "Unknown" },
-      settled: r.paidById === user.id ? true : (settlementTotals.get(r.paidById ?? "") ?? 0) >= r.myShare,
+      settled: r.paidById === user.id ? false : (settlementTotals.get(r.paidById ?? "") ?? 0) >= r.myShare,
     }));
 
     return NextResponse.json({ expenses: result, nextCursor });
