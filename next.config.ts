@@ -8,7 +8,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com",
   "font-src 'self'",
-  "connect-src 'self' https://va.vercel-scripts.com wss: ws:",
+  "connect-src 'self' https://va.vercel-scripts.com https://*.r2.cloudflarestorage.com wss: ws:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
