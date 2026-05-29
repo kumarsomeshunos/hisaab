@@ -11,9 +11,25 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Dutch",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+  title: {
+    template: "%s | Dutch",
+    default: "Dutch — Split expenses with friends",
+  },
   description: "Split expenses with friends and groups — simple, fast, fair.",
   manifest: "/manifest.json",
+  openGraph: {
+    title: "Dutch",
+    description: "Split expenses with friends and groups — simple, fast, fair.",
+    type: "website",
+    url: process.env.NEXT_PUBLIC_APP_URL,
+    siteName: "Dutch",
+  },
+  twitter: {
+    card: "summary",
+    title: "Dutch",
+    description: "Split expenses with friends and groups — simple, fast, fair.",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -34,9 +50,6 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${geist.variable} h-full`}>
-      <head>
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-      </head>
       <body className="h-full bg-background text-foreground antialiased">
         {children}
         <Analytics />
