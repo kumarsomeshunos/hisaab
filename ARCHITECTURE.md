@@ -62,6 +62,7 @@ Dutch is a Splitwise-like expense-splitting Progressive Web App for groups of fr
 | @aws-sdk/client-s3 | S3-compatible client for Cloudflare R2 media uploads | 2026-05-29 |
 | @aws-sdk/s3-request-presigner | Presigned URL generation for browser-direct R2 uploads | 2026-05-29 |
 | idb | Typed, Promise-based IndexedDB wrapper for offline mutation queue | 2026-05-29 |
+| @vercel/analytics | Page view and event analytics via Vercel's edge network | 2026-05-29 |
 
 ---
 
@@ -712,3 +713,4 @@ _Not yet configured._
 | 2026-05-29 | Round 6 bug fixes — non-friend group members viewable via /friends/[username] (limited profile, no settle/expenses); 1-year sessions (was 30 days); expense edit 400 fixed (Split.participantId added, editInitial now sends actual participant UUIDs); split breakdown rows clickable (Link to /friends/[username] or /contacts/[guestId]); balances API now includes settlements for both user and guest balances |
 | 2026-05-29 | Rename Hisaab → Dutch (product name, codename stays hisaab); Cloudflare R2 expense media uploads — expense_media table, presign/confirm/delete API routes, image gallery + lightbox + PDF list on expense detail page; @aws-sdk/client-s3 + s3-request-presigner added |
 | 2026-05-29 | Offline-first PWA — IndexedDB mutation queue (idb), syncQueue() + Background Sync SW entry, useOfflineMutate hook, OfflineBanner + SyncErrorDrawer UI; all 21 mutation call sites across 9 files updated; dutch-data-refresh event wires pages to post-sync refetch |
+| 2026-05-29 | Add Vercel Analytics (@vercel/analytics); scrub leaked DATABASE_URL + RESEND_API_KEY from .env.example and full git history via git filter-repo |
