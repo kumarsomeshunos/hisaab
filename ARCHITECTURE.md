@@ -169,6 +169,8 @@ hisaab/
 │   ├── lib/
 │   │   ├── auth/
 │   │   │   ├── otp.ts            # generateOtp(), hashOtp() — Web Crypto API
+│   │   │   ├── hash.ts           # hashToken() — SHA-256 token hashing (Edge-compatible)
+│   │   │   ├── ratelimit.ts      # checkRateLimit(), getClientIp() — in-memory sliding-window
 │   │   │   └── session.ts        # createSession(), getSessionUser(), deleteSession()
 │   │   ├── db/
 │   │   │   ├── index.ts          # Drizzle client + neon-http connection
@@ -439,7 +441,7 @@ ActivityLog: id, type, actorId → User, groupId → Group | null, payload JSON,
 | `/api/auth/setup` | POST | Set name + username (onboarding) | Session |
 | `/api/auth/signout` | POST | Destroy session | Session |
 | `/api/auth/me` | GET | Return current user | Session |
-| `/api/auth/username-check` | GET | Check username availability | None |
+| `/api/auth/username-check` | GET | Check username availability | Session (any) |
 | `/api/friends` | GET | List all friends with profile data | Session |
 | `/api/friends` | POST | Add a friend by username or email; writes `friend_added` activity | Session |
 | `/api/friends/[friendId]` | DELETE | Remove friendship (both rows); writes `friend_removed` activity | Session |
@@ -498,9 +500,9 @@ ActivityLog: id, type, actorId → User, groupId → Group | null, payload JSON,
   /dashboard  (is_onboarded = true)
 ```
 
-**Session:** 32-byte CSPRNG hex token stored in `sessions` table. HTTP-only cookie `hisaab_session` (`Secure`, `SameSite=Lax`, 30-day Max-Age).
+**Session:** 32-byte CSPRNG hex token. Cookie `hisaab_session` holds the raw token (`Secure`, `SameSite=Lax`, 30-day Max-Age). Only the SHA-256 hash of the token is stored in `sessions.id` — the plaintext never touches the DB.
 
-**Middleware (`src/middleware.ts`):** Runs on every non-public path. Validates session by joining `sessions` + `users` on Neon (Edge-compatible via `@neondatabase/serverless` WebSocket driver). Redirects unauthenticated users to `/auth`; redirects un-onboarded users to `/auth/setup`.
+**Middleware (`src/middleware.ts`):** Runs on every non-public path. Hashes the cookie token, then validates it by joining `sessions` + `users` on Neon (Edge-compatible via `@neondatabase/serverless`). Redirects unauthenticated users to `/auth`; redirects un-onboarded users to `/auth/setup`. Static file bypass is an explicit allowlist, not a broad extension regex.
 
 **OTP security:**
 - 6-digit numeric, `crypto.getRandomValues`
@@ -509,7 +511,18 @@ ActivityLog: id, type, actorId → User, groupId → Group | null, payload JSON,
 - Max 3 wrong attempts → auto-invalidate
 - Max 3 sends per email per hour → 429
 
-**Public routes (no session needed):** `/auth`, `/auth/setup`, `/api/auth/*`, `/_next/*`, static assets.
+**Rate limiting (`src/lib/auth/ratelimit.ts`):** In-memory sliding-window limiter applied to all auth endpoints and user search. Resets on cold starts (acceptable for Vercel serverless).
+
+| Endpoint | Limit |
+|----------|-------|
+| `POST /api/auth/otp/send` | 5 / 15 min per IP |
+| `POST /api/auth/otp/verify` | 10 / 15 min per IP |
+| `GET /api/auth/username-check` | 30 / 5 min per IP |
+| `GET /api/users/search` | 60 / 1 min per IP |
+
+**Public routes (no session needed):** `/auth`, `/auth/setup`, `/api/auth/*`, `/_next/*`, `/manifest.json`, `/opengraph-image`, `/robots.txt`, `/sitemap.xml`, plus PWA static assets excluded by the middleware matcher.
+
+**HTTP security headers** applied to all responses via `next.config.ts`: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `Strict-Transport-Security` (2-year HSTS), `Content-Security-Policy`.
 
 ---
 
@@ -714,3 +727,5 @@ _Not yet configured._
 | 2026-05-29 | Rename Hisaab → Dutch (product name, codename stays hisaab); Cloudflare R2 expense media uploads — expense_media table, presign/confirm/delete API routes, image gallery + lightbox + PDF list on expense detail page; @aws-sdk/client-s3 + s3-request-presigner added |
 | 2026-05-29 | Offline-first PWA — IndexedDB mutation queue (idb), syncQueue() + Background Sync SW entry, useOfflineMutate hook, OfflineBanner + SyncErrorDrawer UI; all 21 mutation call sites across 9 files updated; dutch-data-refresh event wires pages to post-sync refetch |
 | 2026-05-29 | Add Vercel Analytics (@vercel/analytics); scrub leaked DATABASE_URL + RESEND_API_KEY from .env.example and full git history via git filter-repo |
+| 2026-05-29 | Security hardening — HTTP security headers (CSP/HSTS/X-Frame-Options/etc.) via next.config.ts; session token hashing (SHA-256 stored in DB, raw token in cookie only); IP-based rate limiting on auth + search endpoints; auth required on username-check; tightened middleware static bypass to explicit allowlist; OTP removed from email subject; stale starter SVGs deleted |
+| 2026-05-29 | Open source release — LICENSE (MIT), README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, CHANGELOG.md, .github/ (issue templates, PR template, CI workflow); package.json metadata updated |

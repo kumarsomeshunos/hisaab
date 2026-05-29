@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, friendships } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
+import { checkRateLimit, getClientIp } from "@/lib/auth/ratelimit";
 
 const querySchema = z.object({
   q: z.string().trim().min(2, "Query must be at least 2 characters.").max(50),
@@ -11,6 +12,12 @@ const querySchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
+    const ip = getClientIp(request);
+    const { allowed } = checkRateLimit(`search:${ip}`, { limit: 60, windowMs: 60 * 1000 });
+    if (!allowed) {
+      return NextResponse.json({ error: "Too many requests. Try again later." }, { status: 429 });
+    }
+
     const token = request.cookies.get(SESSION_COOKIE)?.value;
     if (!token) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     const sessionData = await getSessionUser(token);

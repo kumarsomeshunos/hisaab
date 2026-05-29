@@ -1,6 +1,9 @@
 import { eq, and, gt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sessions, users } from "@/lib/db/schema";
+import { hashToken } from "@/lib/auth/hash";
+
+export { hashToken };
 
 export const SESSION_COOKIE = "hisaab_session";
 
@@ -21,26 +24,29 @@ export function generateSessionToken(): string {
     .join("");
 }
 
-/** Inserts a new session row and returns the token. */
+/** Inserts a new session row and returns the raw token (stored hashed in DB). */
 export async function createSession(userId: string): Promise<string> {
   const token = generateSessionToken();
+  const hash = await hashToken(token);
   const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-  await db.insert(sessions).values({ id: token, userId, expiresAt });
+  await db.insert(sessions).values({ id: hash, userId, expiresAt });
   return token;
 }
 
 /** Returns the joined { session, user } for a valid, unexpired token — or null. */
 export async function getSessionUser(token: string) {
+  const hash = await hashToken(token);
   const result = await db
     .select({ session: sessions, user: users })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.id, token), gt(sessions.expiresAt, new Date())))
+    .where(and(eq(sessions.id, hash), gt(sessions.expiresAt, new Date())))
     .limit(1);
   return result[0] ?? null;
 }
 
-/** Deletes a session by token (logout). */
+/** Deletes a session by raw token (logout). */
 export async function deleteSession(token: string): Promise<void> {
-  await db.delete(sessions).where(eq(sessions.id, token));
+  const hash = await hashToken(token);
+  await db.delete(sessions).where(eq(sessions.id, hash));
 }

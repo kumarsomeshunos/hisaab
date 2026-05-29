@@ -4,6 +4,7 @@ import { eq, and, gt, count } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { otpCodes } from "@/lib/db/schema";
 import { generateOtp, hashOtp } from "@/lib/auth/otp";
+import { checkRateLimit, getClientIp } from "@/lib/auth/ratelimit";
 
 const schema = z.object({
   email: z
@@ -14,6 +15,12 @@ const schema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIp(request);
+    const { allowed } = checkRateLimit(`send:${ip}`, { limit: 5, windowMs: 15 * 60 * 1000 });
+    if (!allowed) {
+      return NextResponse.json({ error: "Too many requests. Try again later." }, { status: 429 });
+    }
+
     const body = await request.json();
     const parsed = schema.safeParse(body);
 
@@ -26,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     const { email } = parsed.data;
 
-    // Rate limit: max 3 OTP sends per email per hour (count rows, don't delete first)
+    // Rate limit: max 3 OTP sends per email per hour
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const [{ cnt }] = await db
       .select({ cnt: count() })
@@ -64,7 +71,7 @@ export async function POST(request: NextRequest) {
     const { error: emailError } = await resend.emails.send({
       from: process.env.FROM_EMAIL ?? "Dutch <noreply@dutch.app>",
       to: email,
-      subject: `Your Dutch sign-in code: ${otp}`,
+      subject: "Your Dutch sign-in code",
       html: buildEmailHtml(otp),
     });
 

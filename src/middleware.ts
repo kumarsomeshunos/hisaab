@@ -1,20 +1,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { hashToken } from "@/lib/auth/hash";
 
 const SESSION_COOKIE = "hisaab_session";
 
-// Public paths — no session required
 const PUBLIC_PREFIXES = ["/auth", "/api/auth", "/_next", "/favicon"];
+const PUBLIC_EXACT = ["/manifest.json", "/opengraph-image", "/robots.txt", "/sitemap.xml"];
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return true;
-  // PWA static assets
-  if (/\.(js|css|png|jpg|jpeg|svg|ico|webmanifest|json|txt)$/.test(pathname)) return true;
+  if (PUBLIC_EXACT.includes(pathname)) return true;
   return false;
 }
 
-// Lazy-initialised neon client — avoids connecting at module load time
 let _sql: ReturnType<typeof neon> | null = null;
 function getSql() {
   if (!_sql) _sql = neon(process.env.DATABASE_URL!);
@@ -34,18 +33,18 @@ export async function middleware(request: NextRequest) {
       : NextResponse.redirect(new URL("/auth", request.url));
   }
 
-  // Validate session + fetch onboarding status in one query
+  const tokenHash = await hashToken(token);
+
   const rows = await getSql()`
     SELECT u.is_onboarded
     FROM   sessions s
     JOIN   users    u ON s.user_id = u.id
-    WHERE  s.id          = ${token}
+    WHERE  s.id          = ${tokenHash}
       AND  s.expires_at  > NOW()
     LIMIT  1
   ` as { is_onboarded: boolean }[];
 
   if (rows.length === 0) {
-    // Invalid or expired session — clear cookie and redirect
     if (pathname.startsWith("/api/")) {
       const res = NextResponse.json({ error: "Unauthorized." }, { status: 401 });
       res.cookies.set(SESSION_COOKIE, "", { maxAge: 0, path: "/" });
@@ -58,12 +57,10 @@ export async function middleware(request: NextRequest) {
 
   const isOnboarded = rows[0].is_onboarded;
 
-  // Un-onboarded users must complete setup first
   if (!isOnboarded && pathname !== "/auth/setup") {
     return NextResponse.redirect(new URL("/auth/setup", request.url));
   }
 
-  // Already-onboarded users should not re-visit setup
   if (isOnboarded && pathname === "/auth/setup") {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
@@ -73,7 +70,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Run on everything except Next.js internals and static PWA files
-    "/((?!_next/static|_next/image|_next/webpack-hmr|favicon\\.ico|icons|sw\\.js|workbox-).*)",
+    "/((?!_next/static|_next/image|_next/webpack-hmr|favicon\\.ico|icons|sw\\.js|workbox-|worker-).*)",
   ],
 };
