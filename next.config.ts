@@ -6,7 +6,7 @@ const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com",
+  "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com https://*.r2.dev",
   "font-src 'self'",
   "connect-src 'self' https://va.vercel-scripts.com https://*.r2.cloudflarestorage.com wss: ws:",
   "frame-ancestors 'none'",
