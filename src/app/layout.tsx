@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 // Geist is a variable font — all weights (100–900) available via font-thin through font-black
@@ -38,6 +39,7 @@ export default function RootLayout({
       </head>
       <body className="h-full bg-background text-foreground antialiased">
         {children}
+        <Analytics />
       </body>
     </html>
   );
