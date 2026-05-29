@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-// @ts-ignore – next-pwa has no bundled types
+// @ts-expect-error – next-pwa has no bundled types
 import withPWA from "next-pwa";
 
 const CSP = [

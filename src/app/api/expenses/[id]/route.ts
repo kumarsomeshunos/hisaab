@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { eq, and, inArray, isNotNull, sql } from "drizzle-orm";
+import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, expenses, expenseSplits, guestContacts, groups, settlements, expenseComments, friendships, groupMembers, expenseMedia } from "@/lib/db/schema";
+import { users, expenses, expenseSplits, guestContacts, groups, settlements, expenseComments, friendships, expenseMedia } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";
 import { writeActivity } from "@/lib/activity";
 import { R2_PUBLIC_URL } from "@/lib/r2";

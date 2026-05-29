@@ -43,7 +43,6 @@ type SharedExpense = {
 export default function FriendProfilePage({ params }: { params: Promise<{ username: string }> }) {
   const { username } = use(params);
 
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [friend, setFriend] = useState<FriendProfile | null>(null);
   const [balance, setBalance] = useState<number>(0);
   const [mutualGroups, setMutualGroups] = useState<MutualGroup[]>([]);
@@ -58,10 +57,6 @@ export default function FriendProfilePage({ params }: { params: Promise<{ userna
   const [settleNote, setSettleNote] = useState("");
   const [settling, setSettling] = useState(false);
   const { mutate } = useOfflineMutate();
-
-  useEffect(() => {
-    fetch("/api/auth/me").then((r) => r.json()).then((d) => setCurrentUserId(d.user?.id ?? null)).catch(() => {});
-  }, []);
 
   useEffect(() => {
     fetch(`/api/users/${encodeURIComponent(username)}`)

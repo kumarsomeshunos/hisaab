@@ -7,7 +7,6 @@ import {
   Users,
   UserCircle,
   Activity,
-  Settings,
   Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";

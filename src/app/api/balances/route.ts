@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and, or, isNotNull, isNull } from "drizzle-orm";
+import { eq, and, or, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users, friendships, expenses, expenseSplits, guestContacts, settlements } from "@/lib/db/schema";
 import { getSessionUser, SESSION_COOKIE } from "@/lib/auth/session";

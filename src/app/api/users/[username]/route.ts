@@ -232,7 +232,7 @@ export async function GET(
     let nextCursor: string | null = null;
 
     if (sharedIds.length > 0) {
-      let filtered = sharedIds;
+      const filtered = sharedIds;
       // Simple cursor: filter by date/id from expense rows
       const expenseRows = await db
         .select({
